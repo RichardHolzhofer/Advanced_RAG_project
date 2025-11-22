@@ -9,4 +9,14 @@ wheels/
 # Virtual environments
 .venv
 
+# Environmental variables
 .env
+
+# Logs
+logs/
+
+# Transformed documents
+src/document_ingestion/converted_documents/
+
+# Helper notebook
+helper.ipynb
