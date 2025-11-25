@@ -3,7 +3,9 @@ import sys
 from src.logger.logger import logging
 from src.exception.exception import RAGException
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
+import requests
+from xml.etree import ElementTree
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".pptx", ".md", ".csv", ".html", ".xhtml", ".mp3"}
 
@@ -30,3 +32,59 @@ def validate_input(file_or_url):
         raise e
     except Exception as e:
         raise RAGException(e, sys)
+    
+    
+def categorize_site(url: str):
+        """
+        Categorize a site based on available endpoint.
+        """
+        endpoints = [
+            ("llm_text", "llms-full.txt"),
+            ("sitemap", "sitemap.xml")
+        ]
+
+        for category, endpoint in endpoints:
+            target = urljoin(url if url.endswith("/") else url + "/", endpoint)
+
+            try:
+                resp = requests.get(target, timeout=5, allow_redirects=True)
+                if resp.status_code == 200:
+                    return category, target
+            except requests.RequestException:
+                pass
+
+        return "basic", url
+
+
+
+def build_final_url_list(urls):
+    logging.info("Building final URL list...")
+
+    final_urls = []
+
+    for url in urls:
+        category, resolved = categorize_site(url)
+
+        if category == "sitemap":
+            try:
+                logging.info(f"Parsing sitemap: {resolved}")
+                resp = requests.get(resolved, timeout=10)
+
+                root = ElementTree.fromstring(resp.content)
+                ns = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+
+                extracted_urls = [loc.text for loc in root.findall(".//ns:loc", ns)]
+                logging.info(f"Sitemap contains {len(extracted_urls)} URLs")
+
+                final_urls.extend(extracted_urls)
+                continue
+
+            except Exception as e:
+                logging.error(f"Failed to parse sitemap {resolved}: {e}")
+                final_urls.append(url)
+                continue
+
+        final_urls.append(resolved)
+
+    logging.info(f"Final URL count: {len(final_urls)}")
+    return final_urls

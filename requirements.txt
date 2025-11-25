@@ -8,3 +8,7 @@ langchain_groq
 python-dotenv
 openai-whisper
 crawl4ai
+requests
+transformers
+sentence-transformers
+docling_core

@@ -2,12 +2,12 @@ import os
 import sys
 from src.logger.logger import logging
 from src.exception.exception import RAGException
-from src.utils.utils import validate_input
+from src.utils.utils import validate_input, build_final_url_list
 from pathlib import Path
 import json
 
 class DocumentLoader:
-    def __init__(self, docs_path="documents", url_path="data/urls.json"):
+    def __init__(self, docs_path="test_documents", url_path="data/urls.json"):
         logging.info("Initializing DocumentLoader for default file loading.")
         self.docs_path = Path(docs_path)
         self.url_path = Path(url_path)
@@ -25,7 +25,9 @@ class DocumentLoader:
                 urls = json.load(f)
             
             logging.info(f"Loading files from the following JSON file: {self.url_path}")
-            return [url for url in urls if validate_input(url) == 'url']
+            
+            
+            return build_final_url_list(urls=urls)
         except Exception as e:
             raise RAGException(e, sys)
     

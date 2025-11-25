@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "crawl4ai>=0.7.7",
     "docling>=2.63.0",
+    "docling-core>=2.52.0",
     "langchain>=1.0.8",
     "langchain-community>=0.4.1",
     "langchain-core>=1.1.0",
@@ -15,4 +16,7 @@ dependencies = [
     "langgraph>=1.0.3",
     "openai-whisper>=20250625",
     "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+    "sentence-transformers>=5.1.2",
+    "transformers>=4.57.1",
 ]
