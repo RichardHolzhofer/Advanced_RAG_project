@@ -12,3 +12,4 @@ requests
 transformers
 sentence-transformers
 docling_core
+langchain_postgres

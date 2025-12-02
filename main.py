@@ -3,6 +3,7 @@ import sys
 import asyncio
 from src.logger.logger import logging
 from src.exception.exception import RAGException
+from src.config.config import Config
 from src.document_ingestion.document_loader import DocumentLoader
 from src.document_ingestion.document_processor import DocumentProcessor
 
@@ -12,22 +13,19 @@ class IngestionPipeline:
         self.processor = DocumentProcessor()
     
     def load_default_content(self):
-        file_paths, urls_to_crawl = self.loader.load_base_data()
-        return file_paths, urls_to_crawl
-    
-    def process_documents(self, file_paths):
-        file_full_docs, file_chunks = self.processor.convert_documents(document_paths=file_paths)
-        return file_full_docs, file_chunks
-    
-    async def process_websites(self, urls_to_crawl):
-        web_full_docs, web_chunks =  await self.processor.crawl_websites(urls=urls_to_crawl)
-        return web_full_docs, web_chunks
-        
+        return self.loader.load_base_data()
+
         
     async def run_pipeline(self):
-        file_paths, urls_to_crawl = self.load_default_content()
-        file_full_docs, file_chunks = self.process_documents(file_paths=file_paths)
-        web_full_docs, web_chunks = await self.process_websites(urls_to_crawl=urls_to_crawl)
+        file_paths, urls = self.load_default_content()
+        
+        crawled_pages = await self.processor.crawl_websites(urls=urls)
+        
+        to_process = file_paths + crawled_pages
+        
+        all_chunks = await self.processor.convert_documents(to_process)
+        
+        return all_chunks
         
 
 
