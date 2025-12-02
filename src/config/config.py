@@ -11,6 +11,7 @@ load_dotenv()
 
 class Config:
     
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     LLM_MODEL = "openai:gpt-4o-mini"
     EMBEDDING_MODEL = "text-embedding-3-small"
@@ -25,7 +26,7 @@ class Config:
             os.environ["OPENAI_API_KEY"] = cls.OPENAI_API_KEY
             
             logging.info("LLM has been loaded successfully.")
-            return init_chat_model(cls.LLM_MODEL)
+            return init_chat_model(cls.LLM_MODEL, temperature=0)
         except Exception as e:
             raise RAGException(e, sys)
     

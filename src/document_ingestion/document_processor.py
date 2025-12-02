@@ -18,122 +18,197 @@ from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
 from docling.datamodel.base_models import InputFormat
 import uuid
+from src.config.config import Config
+from src.utils.utils import insert_documents
+from src.vectorstore.vectorstore import VectorStore
+from langchain_core.prompts import PromptTemplate
+import textwrap
+from itertools import chain
 
 
-class DocumentProcessor: 
+class DocumentProcessor(Config): 
     EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
     MAX_TOKENS = 512
-    tokenizer = HuggingFaceTokenizer(tokenizer=AutoTokenizer.from_pretrained(EMBED_MODEL_ID), max_tokens=MAX_TOKENS)
-    
     def __init__(self):
+        self.llm = Config.get_llm_model()
         self.converter = DocumentConverter()
+        self.tokenizer = HuggingFaceTokenizer(tokenizer=AutoTokenizer.from_pretrained(self.EMBED_MODEL_ID), max_tokens=self.MAX_TOKENS)
         self.chunker =HybridChunker(tokenizer=self.tokenizer, merge_peers=True)
         
+    def _get_token_count(self, text):
+        return len(self.tokenizer.tokenizer.encode(text))
+    
+    def _get_provenance(self, chunk):
+        try:
+            return self.chunker.contextualize(chunk)
+        except Exception:
+            return "Unknown"
         
-    def _process_single_document(self, doc_obj):
+    def _get_summary(self, text):
+        summary = self.llm.invoke([
+            ("system", "Summarize the provided text in maximum 3-5 sentences."),
+            ("user", text)
+            ]
+            )
+        return summary.content
+    
+    def _create_context(self, full_doc, chunk):
+        
+        prompt = textwrap.dedent(
+            """
+            You are an expert document analysis and text enrichment engine. Your primary goal is to generate a concise,
+            factual context prefix for a specific TEXT CHUNK, drawing upon the FULL DOCUMENT to establish its source and relevance.
+
+            Your final output MUST be the full, enriched text: **[CONTEXT PREFIX] + [Original TEXT CHUNK]**.
+
+            ### INSTRUCTIONS:
+
+            1.  **Analyze the Full Document:** Review the document's title, headers, and overall content to identify the source, date, key entities, and main topic of the TEXT CHUNK.
+            2.  **Generate the Context Prefix:** Create a single, highly descriptive prefix sentence that explains *where* the TEXT CHUNK comes from within the FULL DOCUMENT.
+            3.  **Combine and Output:** Concatenate the generated context prefix and the original TEXT CHUNK.
+
+            ### CONSTRAINTS:
+
+            * **Output Format:** The final output MUST be *only* the single, combined string of the context prefix and the original text. Do not include any extra commentary, headers, or quotes.
+            * **Context Length:** The context prefix MUST be highly concise, with a maximum length of **100 tokens**.
+            * **Factual Basis:** The context prefix must only contain information found in the FULL DOCUMENT.
+            * **Separation:** Use a clear separator (e.g., a period followed by a space) between the context prefix and the original TEXT CHUNK.
+
+            ---
+
+            ### INPUTS:
+
+            **FULL DOCUMENT:**
+            ---
+            {full_doc}
+            ---
+
+            **TEXT CHUNK:**
+            ---
+            {chunk}
+            ---
+
+            ### EXAMPLE (DO NOT output this):
+
+            **If FULL DOCUMENT is:** A Q4 2023 financial report for ACME Corp, Section 2 is 'Revenue Breakdown'.
+            **If TEXT CHUNK is:** "...cloud services revenue grew by 18% year-over-year..."
+
+            **EXPECTED OUTPUT:**
+            This text is from the Q4 2023 financial report for ACME Corporation, detailing the Revenue Breakdown section. ...cloud services revenue grew by 18% year-over-year...
+
+            ---
+
+            ### FINAL ENRICHED TEXT:
+                        
+            """
+        )
+        
+        llm_chain = PromptTemplate.from_template(prompt) | self.llm
+        return llm_chain.invoke({"full_doc": full_doc, "chunk": chunk}).content
+        
+        
+    async def _process_single_document(self, input_obj):
         
         doc_uuid = str(uuid.uuid4())
         
-        full_content = None
-        document_source = None
-        doc_type = "unknown"
-        num_pages = 0
-        docling_document = None
         
-        if isinstance(doc_obj, ConversionResult):
-            full_content = doc_obj.document.export_to_markdown()
-            document_source = doc_obj.input.file.name
-            doc_type = doc_obj.input.format.value
+        if isinstance(input_obj, Path):
+            local_doc = self.converter.convert(input_obj)
+            
+            full_content = local_doc.document.export_to_markdown()
+            document_source = local_doc.input.file.name
+            doc_type = local_doc.input.format.value
         
             try:
-                num_pages = len(doc_obj.pages)
+                num_pages = len(local_doc.pages)
             except Exception:
-                num_pages =len(doc_obj.document.export_to_dict().get("pages", {}))
+                num_pages = 1
                 
-            docling_document = doc_obj.document
+            docling_document = local_doc.document
         
-        elif isinstance(doc_obj, CrawlResultContainer):
+        elif isinstance(input_obj, CrawlResultContainer):
             
-            full_content = doc_obj.markdown.raw_markdown
-            document_source = doc_obj.url
+            full_content = input_obj.markdown.raw_markdown
+            document_source = input_obj.url
             doc_type = "web_article"
             num_pages = 1
             
             docling_document = self.converter.convert_string(content=full_content, format=InputFormat.MD).document
             
         else:
-            raise TypeError(f"Not supported document type: {type(doc_obj)}")
+            raise TypeError(f"Not supported document type: {type(input_obj)}")
         
-        full_doc = Document(
-            page_content=full_content,
-            metadata={
-                "document_id": doc_uuid,
-                "source": document_source,
-                "file_type": doc_type,
-                "no_of_pages": num_pages,
-                "title": doc_obj.title if hasattr(doc_obj, 'title') else "Untitled"
-            }
-        )
-            
+        full_doc = {
+            "document_id": doc_uuid,
+            "source": document_source,
+            "file_type": doc_type,
+            "title": getattr(input_obj, "title", "Untitled"),
+            "summary": self._get_summary(full_content),
+            "full_content":full_content,
+            "no_of_pages": num_pages
+        }
+        
+        await insert_documents(document=full_doc)
         
         chunks = list(self.chunker.chunk(docling_document))
         final_chunks = []
         
         for chunk_id, chunk_content in enumerate(chunks):
-            page_no = None
+            
+            chunk_uuid = str(uuid.uuid4())
+            provenance = self._get_provenance(chunk=chunk_content)
+            token_count = self._get_token_count(text=chunk_content.text)
+            
             try:
                 page_no = chunk_content.export_json_dict()["meta"]["doc_items"][0]['prov'][0]["page_no"]
             except (IndexError, KeyError, AttributeError):
                 page_no = 1 if doc_type == "web_article" else None
                 
+            
+                
             final_chunks.append(
                 Document(
-                    page_content=chunk_content.text,
+                    id=chunk_uuid,
+                    page_content=self._create_context(full_doc=full_doc["full_content"], chunk=chunk_content.text),
                     metadata={
                         "document_id": doc_uuid,
-                        "chunk_id": chunk_id,
+                        "chunk_index": chunk_id,
+                        "original_chunk": chunk_content.text,
                         "source" : document_source,
+                        "source_type": doc_type,
                         "file_type": doc_type,
-                        "page_no": page_no
+                        "page_no": page_no,
+                        "token_count": token_count,
+                        "provenance": provenance
                     }
                 )
             )
             
-        return full_doc, final_chunks
+        return final_chunks
                 
                 
-    def convert_documents(self, document_paths):
+    async def convert_documents(self, inputs):
         
-        final_documents = []
-        final_chunks = []
+        vectorstore = VectorStore()
         
         try:
-            converted_docs = self.converter.convert_all(document_paths)
+            vectorstore.create_conn_uri()
+            vectorstore.create_engine()
+            await vectorstore.create_vectorstore()
             
-            for doc_content in converted_docs:
-                
-                full_doc, chunks = self._process_single_document(doc_obj=doc_content)
-                final_documents.append(full_doc)
-                final_chunks.extend(chunks)
-                
-                    
-            with open("./final_documents/final_documents.txt", "w", encoding='utf-8') as f:
-                f.write("\n\n".join([str(x) for x in final_documents]))
-                
-            with open("./final_documents/final_chunks.txt", "w", encoding='utf-8') as f:
-                f.write("\n\n".join([str(x) for x in final_chunks]))
-                
-            return final_documents, final_chunks
-                
+            docs = await asyncio.gather(*[self._process_single_document(doc) for doc in inputs])
+            
+            all_chunks = list(chain.from_iterable(docs))
+            
+            await vectorstore.add_documents(documents=all_chunks)
+            
+            return all_chunks
 
         except Exception as e:
             raise RAGException(e, sys)
         
         
     async def crawl_websites(self, urls):
-        
-        final_documents = []
-        final_chunks = []
         
         try:
             browser_config = BrowserConfig(headless=True, verbose=False)
@@ -155,20 +230,8 @@ class DocumentProcessor:
             
             async with AsyncWebCrawler(config=browser_config) as crawler:
                     crawl_results = await crawler.arun_many(urls=urls, config=crawl_config)
-                    
-                    for crawl_cont in crawl_results:
-                        
-                        full_doc, chunks = self._process_single_document(crawl_cont)
-                        final_documents.append(full_doc)
-                        final_chunks.extend(chunks)
-                        
-            with open("./final_documents/web_documents.txt", "w", encoding='utf-8') as f:
-                f.write("\n\n".join([str(x) for x in final_documents]))
-                
-            with open("./final_documents/web_chunks.txt", "w", encoding='utf-8') as f:
-                f.write("\n\n".join([str(x) for x in final_chunks]))            
-                        
-            return final_documents, final_chunks
+                                  
+            return crawl_results
 
         except Exception as e:
             raise RAGException(e, sys)
