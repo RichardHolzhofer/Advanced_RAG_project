@@ -1,29 +1,32 @@
 import os
 import sys
 import asyncio
+import uuid
+import textwrap
+from itertools import chain
+from urllib.parse import urlparse
+from pathlib import Path
+
 from src.logger.logger import logging
 from src.exception.exception import RAGException
-from docling.document_converter import DocumentConverter
-from pathlib import Path
+from src.config.config import Config
+from src.utils.utils import insert_documents
+from src.vectorstore.vectorstore import VectorStore
+
+
+
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
-from crawl4ai import CrawlResult
 from crawl4ai.models import CrawlResultContainer
 from docling.chunking import HybridChunker
 from transformers import AutoTokenizer
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
-from urllib.parse import urlparse
-from langchain_core.documents import Document
-from docling.datamodel.document import ConversionResult
-from docling_core.types.doc import DoclingDocument
+from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import InputFormat
-import uuid
-from src.config.config import Config
-from src.utils.utils import insert_documents
-from src.vectorstore.vectorstore import VectorStore
+
+from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
-import textwrap
-from itertools import chain
+
 
 
 class DocumentProcessor(Config): 
