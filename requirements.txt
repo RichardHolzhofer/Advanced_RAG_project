@@ -13,3 +13,9 @@ transformers
 sentence-transformers
 docling_core
 langchain_postgres
+rank_bm25
+streamlit
+playwright
+qdrant-client
+langchain-qdrant
+fastembed

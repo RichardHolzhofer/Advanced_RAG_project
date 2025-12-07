@@ -3,37 +3,30 @@ import sys
 
 from src.logger.logger import logging
 from src.exception.exception import RAGException
+from src.config.config import Config
 from src.state.state import RAGState
-from langchain_community.retrievers import BM25Retriever
+from src.vectorstore.vectorstore import VectorStore
+from langchain_core.documents import Document
+from typing import List
 import textwrap
 
 class RAGNodes:
     
-    def __init__(self, dense_retriever, sparse_retriever, llm):
-        
-        self.dense_retriever = dense_retriever
-        self.sparse_retriever = sparse_retriever
+    def __init__(self, retriever, llm):
+        self.retriever = retriever
         self.llm = llm
         
-    def retrieve_docs_dense(self, state:RAGState):
-        docs = self.dense_retriever.invoke(state.question)
-        return RAGState(
-            question=state.question,
-            retrieved_docs=docs
-        )
+    def retrieve_documents(self, state:RAGState) -> RAGState:
+        docs = self.retriever.invoke(state["question"])
         
-    def retrieve_docs_sparse(self, state:RAGState):
-        docs = self.sparse_retriever.invoke(state.question)
-        return RAGState(
-            question=state.question,
-            retrieved_docs=docs
-        )
         
+        return {"retrieved_docs":docs}
+                
     def rerank_documents(self, state:RAGState):
         pass
     
-    def generate_answer(self, state:RAGState):
-        context = "\n\n".join([doc.page_content for doc in state.retrieved_docs])
+    def generate_answer(self, state:RAGState) -> RAGState:
+        context = "\n\n".join([doc.page_content for doc in state['retrieved_docs']])
         
         prompt = textwrap.dedent(
         f"""
@@ -43,15 +36,11 @@ class RAGNodes:
         {context}
         
         Question:
-        {state.question}
+        {state['question']}
         
         """
         )
         
         response = self.llm.invoke(prompt)
         
-        return RAGState(
-            question=state.question,
-            retrieved_docs=state.retrieved_docs,
-            answer=response.content
-        )
+        return {"answer": response.content}

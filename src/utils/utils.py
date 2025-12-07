@@ -6,7 +6,6 @@ from pathlib import Path
 from urllib.parse import urlparse, urljoin
 import requests
 from xml.etree import ElementTree
-import asyncpg
 import json
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".pptx", ".md", ".csv", ".html", ".xhtml", ".mp3"}
@@ -91,40 +90,15 @@ def build_final_url_list(urls):
     logging.info(f"Final URL count: {len(final_urls)}")
     return final_urls
 
-async def insert_documents(document):
-    POSTGRES_USER = os.getenv("SUPABASE_USER")
-    POSTGRES_PASSWORD = os.getenv("SUPABASE_PASSWORD")
-    POSTGRES_HOST = os.getenv("SUPABASE_HOST")
-    POSTGRES_PORT = os.getenv("SUPABASE_PORT")
-    POSTGRES_DB = os.getenv("SUPABASE_DB")
+def save_json(path, filename, file):
     
-    conn_uri = (
-        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}"
-        f":{POSTGRES_PORT}/{POSTGRES_DB}"
-    )
+    os.makedirs(f"./{path}", exist_ok=True)
+    with open (f"./{path}/{filename}.json", "w", encoding='utf-8') as f:
+            json.dump(file, f, ensure_ascii=False)
+            
+def load_json(path):
     
-    metadata = {
-        "summary": document["summary"],
-        "full_content": document["full_content"]
-    }
-
-    query = """
-        INSERT INTO documents (
-            document_id, source, title, file_type, no_of_pages, metadata
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (document_id) DO NOTHING;
-    """
-    conn = await asyncpg.connect(conn_uri)
-    
-    await conn.execute(
-        query,
-        document["document_id"],
-        document["source"],
-        document["title"],
-        document["file_type"],
-        document["no_of_pages"],
-        json.dumps(metadata)
-    )
-    
-    await conn.close()
+    with open (f"{path}", "r", encoding='utf-8') as f:
+            data = json.load(f)
+            
+    return data
