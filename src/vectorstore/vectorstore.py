@@ -3,93 +3,84 @@ import sys
 from src.logger.logger import logging
 from src.exception.exception import RAGException
 from src.config.config import Config
-from langchain_postgres import PGEngine, PGVectorStore
-from langchain_community.retrievers import BM25Retriever
+from qdrant_client import QdrantClient, models
+from langchain_qdrant import QdrantVectorStore, RetrievalMode, FastEmbedSparse
+from langchain_core.documents import Document
+from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams
 
 
-class VectorStore(Config):
+
+class VectorStore:
     def __init__(self):
         self.llm = Config.get_llm_model()
         self.embeddings = Config.get_embedding_model()
-        self.dense_store = None
-        self.sparse_store = None
-        self.connection_uri = None
-        self.engine = None
+        self.persist_path = "./qdrant_db"
+        self.client = QdrantClient(path=self.persist_path)
+        self.collection_name = "my_collection"
+        self.vectorstore = None
         self.retriever = None
-        
-    def _create_conn_uri(self):
+    
+    def load_vectorstore(self):
         
         try:
-            logging.info("Creating connection URI.")
-        
-            POSTGRES_USER = os.getenv("SUPABASE_USER")
-            POSTGRES_PASSWORD = os.getenv("SUPABASE_PASSWORD")
-            POSTGRES_HOST = os.getenv("SUPABASE_HOST")
-            POSTGRES_PORT = os.getenv("SUPABASE_PORT")
-            POSTGRES_DB = os.getenv("SUPABASE_DB")
-            
-            conn_uri = (
-                f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}"
-                f":{POSTGRES_PORT}/{POSTGRES_DB}"
+            logging.info("Loading vector store.")
+            self.vectorstore = QdrantVectorStore(
+                client=self.client,
+                embedding=self.embeddings,
+                collection_name=self.collection_name,
+                vector_name="dense",
+                retrieval_mode=RetrievalMode.HYBRID,
+                distance=Distance.COSINE,
+                sparse_vector_name="sparse",
+                sparse_embedding=FastEmbedSparse(model_name="Qdrant/bm25")
             )
-            self.connection_uri = conn_uri
-            
-            logging.info("Connection URI has been created successfully.")
+            return self.vectorstore
+            logging.info("Vector store has been loaded successfully.")
         except Exception as e:
             raise RAGException(e, sys)
         
-    def _create_engine(self):
-        try:
-            logging.info("Creating DB Engine.")
-            self.engine = PGEngine.from_connection_string(url=self.connection_uri)
-            logging.info("DB Engine has been created successfully.")
-        except Exception as e:
-            raise RAGException(e, sys)
-        
-    async def _create_vectorstore(self):
-        
-        try:
-            logging.info("Setting up vector store.")
-            self.dense_store = await PGVectorStore.create(
-                engine=self.engine,
-                embedding_service=self.embeddings,
-                table_name="chunks",
-                id_column="chunk_id",
-                content_column="content",
-                embedding_column="embedding",
-                metadata_columns=["document_id", "chunk_index", "source_type"],
-                metadata_json_column="metadata"
-            )
-            logging.info("Vector store has been set up successfully.")
-        except Exception as e:
-            raise RAGException(e, sys)
-        
-    async def _add_documents(self, documents):
+    def _add_documents(self, documents):
         try:
             logging.info("Uploading documents to the vector store")
-            await self.dense_store.aadd_documents(documents=documents)
+            self.vectorstore.add_documents(documents=documents)
             logging.info("Documents have been uploaded successfully to the vector store.")
         except Exception as e:
             raise RAGException(e, sys)
         
-    def get_dense_retriever(self, documents):
+    def close_client(self):
         try:
-            logging.info("Setting up dense retriever.")
-            self._create_conn_uri()
-            self._create_engine()
-            self._create_vectorstore()
-            self._add_documents(documents=documents)
-            self.retriever = self.dense_store.as_retriever()
-            logging.info("Dense retriever has been set up successfully.")
-        except Exception as e:
-            raise RAGException(e, sys)    
-        
-    def get_sparse_retriever(self, documents):
-        try:
-            logging.info("Creating BM25 retriever")
-            self.sparse_store = BM25Retriever.from_documents(documents=documents)
-            logging.info("BM25 retriever is ready to use")
+            if self.client:
+                self.client.close()
         except Exception as e:
             raise RAGException(e, sys)
         
+    def create_vectorstore(self, documents): #uuid
+              
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            vectors_config={"dense": VectorParams(size=1536, distance=Distance.COSINE)},
+            sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))}
+        )
+        
+        sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+        
+        
+        self.vectorstore = QdrantVectorStore(
+            client=self.client,
+            collection_name=self.collection_name,
+            embedding=self.embeddings,
+            sparse_embedding=sparse_embeddings,
+            retrieval_mode=RetrievalMode.HYBRID,
+            vector_name="dense",
+            sparse_vector_name="sparse"
+        )
+        
+        self._add_documents(documents=documents)
+        return self.vectorstore
+    
+    def create_retriever(self):
+        self.retriever = self.vectorstore.as_retriever()
+        return self.retriever
+    
+    
         

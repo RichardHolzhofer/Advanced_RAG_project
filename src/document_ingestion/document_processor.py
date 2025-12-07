@@ -10,7 +10,6 @@ from pathlib import Path
 from src.logger.logger import logging
 from src.exception.exception import RAGException
 from src.config.config import Config
-from src.utils.utils import insert_documents
 from src.vectorstore.vectorstore import VectorStore
 
 
@@ -151,7 +150,6 @@ class DocumentProcessor(Config):
             "no_of_pages": num_pages
         }
         
-        await insert_documents(document=full_doc)
         
         chunks = list(self.chunker.chunk(docling_document))
         final_chunks = []
@@ -189,28 +187,7 @@ class DocumentProcessor(Config):
             
         return final_chunks
                 
-                
-    async def convert_documents(self, inputs):
-        
-        vectorstore = VectorStore()
-        
-        try:
-            vectorstore.create_conn_uri()
-            vectorstore.create_engine()
-            await vectorstore.create_vectorstore()
-            
-            docs = await asyncio.gather(*[self._process_single_document(doc) for doc in inputs])
-            
-            all_chunks = list(chain.from_iterable(docs))
-            
-            await vectorstore.add_documents(documents=all_chunks)
-            
-            return all_chunks
 
-        except Exception as e:
-            raise RAGException(e, sys)
-        
-        
     async def crawl_websites(self, urls):
         
         try:
@@ -240,5 +217,16 @@ class DocumentProcessor(Config):
             raise RAGException(e, sys)
         
 
-        
+    async def process_documents(self, inputs):
+           
+        try:
+
+            docs = await asyncio.gather(*[self._process_single_document(doc) for doc in inputs])
+            
+            all_chunks = list(chain.from_iterable(docs))
+            
+            return all_chunks
+
+        except Exception as e:
+            raise RAGException(e, sys)    
         
