@@ -4,7 +4,7 @@ import sys
 from src.logger.logger import logging
 from src.exception.exception import RAGException
 from src.config.config import Config
-from src.state.state import RAGState
+from src.state.state import RAGState, Router
 from src.vectorstore.vectorstore import RAGVectorStore
 from langchain_core.documents import Document
 from typing import List
@@ -20,7 +20,7 @@ class RAGNodes:
     def __init__(self, retriever, llm):
         self.retriever = retriever
         self.llm = llm
-        
+           
         
     def rewrite_query(self, state:RAGState):
         
@@ -45,6 +45,33 @@ class RAGNodes:
             )
             
             return {"rewritten_query": rewritten_query}
+        except Exception as e:
+            raise RAGException(e, sys)
+        
+        
+    def route_selector(self, state:RAGState):
+        try:
+            router = self.llm.with_structured_output(Router)
+            
+            decision = router.invoke(
+                [
+                    (SystemMessage(content=
+                                   """
+                                    You are an expert query router. Your goal is to classify the user's query into one of two categories based on the nature of the information requested.
+
+                                    Classification Rules:
+                                    1. RAG: The question is specific to company documents, policies, procedures, or historical data contained in the internal knowledge base.
+                                    2. CONVERSATIONAL: **The question is a greeting, simple comment, or a General Knowledge/Basic Math question that the language model can answer instantly without needing a search tool or internal documents (e.g., "Hi," "What is 5+5?").**
+
+                                    Return ONLY one of the following two strings: rag, conversational
+                                    """
+                                   
+                                   )),
+                    HumanMessage(content=state["rewritten_query"])
+                ]
+            )
+            
+            return {"next_step": decision}
         except Exception as e:
             raise RAGException(e, sys)
         
@@ -110,3 +137,28 @@ class RAGNodes:
         
         except Exception as e:
             raise RAGException(e, sys)
+        
+    def expand_query(self, state:RAGState):
+        pass
+        """
+        try:
+            return {"rewritten_query": state["rewritten_query"] + " (EXPANDED)"}
+        
+        except Exception as e:
+            raise RAGException(e, sys)
+            
+        """        
+    def conversational_query(self, state:RAGState):
+        try:
+            return {"retrieved_docs": []}
+        except Exception as e:
+            raise RAGException(e, sys)
+        
+    def web_search(self, state:RAGState):
+        pass
+        """
+        try:
+            return {"tool_search_results": "Web search placeholder content."}
+        except Exception as e:
+            raise RAGException(e, sys)
+        """

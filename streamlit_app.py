@@ -92,7 +92,6 @@ def main():
                 # 1. Prepare initial state for LangGraph
                 initial_state = {
                     "question": question, 
-                    # Pass the correct history object (list of BaseMessages)
                     "chat_history": st.session_state.chat_history_messages 
                 }
                 
@@ -102,7 +101,8 @@ def main():
                     answer_placeholder = st.empty()
                     
                     st.markdown("### ⚙️ Graph Execution Trace (DEBUG)")
-                    trace_placeholder = st.empty()
+                    # Placeholder to show the evolving state attributes
+                    trace_placeholder = st.empty() 
                 
                 full_answer = ""
                 trace_updates = []
@@ -116,24 +116,41 @@ def main():
                     
                     # A. Collect Trace/Debug Information
                     debug_output = {}
+                    
+                    # Inspect the state update for key node outputs
                     for key, value in state_update.items():
-                        # Only show relevant keys and format for readability
-                        if key == "retrieved_docs" and value:
-                            doc_contents = [doc.page_content[:40] + "..." for doc in value]
-                            debug_output[key] = f"{len(value)} Docs retrieved: {doc_contents}"
-                        elif key == "rewritten_query" and value:
-                             debug_output[key] = str(value)
-                        elif key == "answer" and value and value != full_answer:
-                             # Track the final answer
-                             debug_output[key] = str(value)
                         
+                        # Displaying outputs from key nodes (attributes)
+                        if key == "rewritten_query" and value:
+                             # Output from rewriter_node
+                             debug_output["Rewritten Query"] = str(value)
+                             
+                        elif key == "next_step" and value:
+                             # Output from router_node (the Pydantic object)
+                             # Since you store the object, we extract the route property
+                             if hasattr(value, 'route'):
+                                 debug_output["Router Decision"] = f"Route: `{value.route}`"
+                             else:
+                                 debug_output["Router Decision"] = str(value)
+                                 
+                        elif key == "retrieved_docs" and value:
+                             # Output from retriever_node
+                             doc_contents = [doc.page_content[:40] + "..." for doc in value]
+                             debug_output["Retrieved Docs"] = f"{len(value)} Documents found."
+                             
+                        elif key == "answer" and value and value != full_answer:
+                             # Output from answer_generator_node
+                             debug_output["Final Answer"] = "GENERATING..."
+
                     # B. Update the Debug Trace display
                     if debug_output:
+                        # Append the collected outputs to the trace history
                         trace_updates.append(debug_output)
                         
                         trace_markdown = ""
                         for item in trace_updates:
-                            trace_markdown += "\n\n**State Update:**\n"
+                            # Display each updated attribute clearly
+                            trace_markdown += "\n\n**Node Output:**\n"
                             for k, v in item.items():
                                 trace_markdown += f"- **{k}:** `{v}`\n"
                         
@@ -142,6 +159,7 @@ def main():
                         # C. Update the final answer if it exists in the stream
                         if "answer" in state_update:
                              full_answer = state_update["answer"]
+                             # Display the final answer in the dedicated placeholder
                              answer_placeholder.success(full_answer)
 
                 elapsed_time = time.time() - start_time
