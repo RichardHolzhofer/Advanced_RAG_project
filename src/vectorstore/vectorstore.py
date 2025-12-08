@@ -7,10 +7,11 @@ from qdrant_client import QdrantClient, models
 from langchain_qdrant import QdrantVectorStore, RetrievalMode, FastEmbedSparse
 from langchain_core.documents import Document
 from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams
+from langchain_community.vectorstores import InMemoryVectorStore
 
 
 
-class VectorStore:
+class RAGVectorStore:
     def __init__(self):
         self.llm = Config.get_llm_model()
         self.embeddings = Config.get_embedding_model()
@@ -34,8 +35,10 @@ class VectorStore:
                 sparse_vector_name="sparse",
                 sparse_embedding=FastEmbedSparse(model_name="Qdrant/bm25")
             )
-            return self.vectorstore
+            
             logging.info("Vector store has been loaded successfully.")
+            return self.vectorstore
+            
         except Exception as e:
             raise RAGException(e, sys)
         
@@ -54,33 +57,42 @@ class VectorStore:
         except Exception as e:
             raise RAGException(e, sys)
         
-    def create_vectorstore(self, documents): #uuid
-              
-        self.client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config={"dense": VectorParams(size=1536, distance=Distance.COSINE)},
-            sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))}
-        )
+    def create_vectorstore(self, documents):
         
-        sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+        try:
+            logging.info("Creating vector store")    
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config={"dense": VectorParams(size=1536, distance=Distance.COSINE)},
+                sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))}
+            )
+            
+            sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+            
+            
+            self.vectorstore = QdrantVectorStore(
+                client=self.client,
+                collection_name=self.collection_name,
+                embedding=self.embeddings,
+                sparse_embedding=sparse_embeddings,
+                retrieval_mode=RetrievalMode.HYBRID,
+                vector_name="dense",
+                sparse_vector_name="sparse"
+            )
+            
+            self._add_documents(documents=documents)
+            
+            logging.info("Vector store has been created successfully.")
+            return self.vectorstore
         
-        
-        self.vectorstore = QdrantVectorStore(
-            client=self.client,
-            collection_name=self.collection_name,
-            embedding=self.embeddings,
-            sparse_embedding=sparse_embeddings,
-            retrieval_mode=RetrievalMode.HYBRID,
-            vector_name="dense",
-            sparse_vector_name="sparse"
-        )
-        
-        self._add_documents(documents=documents)
-        return self.vectorstore
+        except Exception as e:
+            raise RAGException(e,sys)
     
     def create_retriever(self):
-        self.retriever = self.vectorstore.as_retriever()
-        return self.retriever
-    
-    
-        
+        try:
+            logging.info("Creating retriever")
+            self.retriever = self.vectorstore.as_retriever()
+            logging.info("Retriever has been created successfully")
+            return self.retriever
+        except Exception as e:
+            raise RAGException(e, sys)
