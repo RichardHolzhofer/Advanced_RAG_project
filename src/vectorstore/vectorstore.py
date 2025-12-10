@@ -8,7 +8,7 @@ from langchain_qdrant import QdrantVectorStore, RetrievalMode, FastEmbedSparse
 from langchain_core.documents import Document
 from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams
 from langchain_community.vectorstores import InMemoryVectorStore
-
+import uuid
 
 
 class RAGVectorStore:
@@ -45,7 +45,8 @@ class RAGVectorStore:
     def _add_documents(self, documents):
         try:
             logging.info("Uploading documents to the vector store")
-            self.vectorstore.add_documents(documents=documents)
+            doc_ids = [doc.id for doc in documents]
+            self.vectorstore.add_documents(documents=documents, ids=doc_ids)
             logging.info("Documents have been uploaded successfully to the vector store.")
         except Exception as e:
             raise RAGException(e, sys)
@@ -91,7 +92,7 @@ class RAGVectorStore:
     def create_retriever(self):
         try:
             logging.info("Creating retriever")
-            self.retriever = self.vectorstore.as_retriever()
+            self.retriever = self.vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k":7, "score_threshold": 0.7})
             logging.info("Retriever has been created successfully")
             return self.retriever
         except Exception as e:

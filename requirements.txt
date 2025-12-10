@@ -19,3 +19,6 @@ playwright
 qdrant-client
 langchain-qdrant
 fastembed
+tavily-python
+wikipedia
+langchain-tavily

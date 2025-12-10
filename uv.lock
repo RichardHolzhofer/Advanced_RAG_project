@@ -51,6 +51,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langchain-postgres" },
     { name = "langchain-qdrant" },
+    { name = "langchain-tavily" },
     { name = "langgraph" },
     { name = "openai-whisper" },
     { name = "playwright" },
@@ -60,7 +61,9 @@ dependencies = [
     { name = "requests" },
     { name = "sentence-transformers" },
     { name = "streamlit" },
+    { name = "tavily-python" },
     { name = "transformers" },
+    { name = "wikipedia" },
 ]
 
 [package.metadata]
@@ -77,6 +80,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=1.0.3" },
     { name = "langchain-postgres", specifier = ">=0.0.16" },
     { name = "langchain-qdrant", specifier = ">=1.1.0" },
+    { name = "langchain-tavily", specifier = ">=0.2.13" },
     { name = "langgraph", specifier = ">=1.0.3" },
     { name = "openai-whisper", specifier = ">=20250625" },
     { name = "playwright", specifier = ">=1.56.0" },
@@ -86,7 +90,9 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "sentence-transformers", specifier = ">=5.1.2" },
     { name = "streamlit", specifier = ">=1.52.0" },
+    { name = "tavily-python", specifier = ">=0.7.14" },
     { name = "transformers", specifier = ">=4.57.1" },
+    { name = "wikipedia", specifier = ">=1.4.0" },
 ]
 
 [[package]]
@@ -1800,6 +1806,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/77/66/fb1c4e2801e55d92dea71d9a7f948574a322a1f5adc7913231023827f79f/langchain_qdrant-1.1.0.tar.gz", hash = "sha256:433236845736f973543ac6b7137f9d7fa511b7539373fbc6565c581d3ba59373", size = 195565, upload-time = "2025-10-22T17:27:15.157Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/7e/d951082cb13e923508ba1eee4f48e7d511efc991c6506af567334654a3f3/langchain_qdrant-1.1.0-py3-none-any.whl", hash = "sha256:546c5c9aa57f543dbcee07343f730c331e4ec2af2ec55b541010af08d872bf35", size = 24254, upload-time = "2025-10-22T17:27:14.065Z" },
+]
+
+[[package]]
+name = "langchain-tavily"
+version = "0.2.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "langchain" },
+    { name = "langchain-core" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/05/75/a08ff73441fdaaef6e1ed83ee3b6747fd7c562ff772a09ebf5fe8fb252d3/langchain_tavily-0.2.13.tar.gz", hash = "sha256:97752167225b1459ffd2055bc8ffcec30658ff808dd5f7f9b2efa85ebbc7895a", size = 21842, upload-time = "2025-11-04T15:30:32.756Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/95/a2/7de8e9071b6a60cf9fe974744a2961e2dc77492d0ac29285a70b465cdb57/langchain_tavily-0.2.13-py3-none-any.whl", hash = "sha256:aa5b445c336f5f9314ab00f348554a42316af75ac839a0016442e382dd2cb1cb", size = 26025, upload-time = "2025-11-04T15:30:31.679Z" },
 ]
 
 [[package]]
@@ -4632,6 +4653,20 @@ wheels = [
 ]
 
 [[package]]
+name = "tavily-python"
+version = "0.7.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "requests" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/cb/c9df2f11b06a2336d449ba48b45f013133d8da7af7b0d9414d2055796734/tavily_python-0.7.14.tar.gz", hash = "sha256:3d7421fcd12609a7d8afe1d0ba27bc968cd44aa916667f7e8b46f8cdf9c6f784", size = 21023, upload-time = "2025-12-04T23:27:00.739Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/1b/d3735f8af5a9be370e8ecf660eca31230c20018fa7216eb3568e9761be0e/tavily_python-0.7.14-py3-none-any.whl", hash = "sha256:496d40785d620d820aaa6dc449fdcacebb05f1410a17b278891e717ac97e1ec9", size = 17950, upload-time = "2025-12-04T23:26:59.465Z" },
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -5116,6 +5151,16 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/db/d9/c495884c6e548fce18a8f40568ff120bc3a4b7b99813081c8ac0c936fa64/watchdog-6.0.0-py3-none-win_amd64.whl", hash = "sha256:cbafb470cf848d93b5d013e2ecb245d4aa1c8fd0504e863ccefa32445359d680", size = 79070, upload-time = "2024-11-01T14:07:10.686Z" },
     { url = "https://files.pythonhosted.org/packages/33/e8/e40370e6d74ddba47f002a32919d91310d6074130fe4e17dabcafc15cbf1/watchdog-6.0.0-py3-none-win_ia64.whl", hash = "sha256:a1914259fa9e1454315171103c6a30961236f508b9b623eae470268bbcc6a22f", size = 79067, upload-time = "2024-11-01T14:07:11.845Z" },
 ]
+
+[[package]]
+name = "wikipedia"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/67/35/25e68fbc99e672127cc6fbb14b8ec1ba3dfef035bf1e4c90f78f24a80b7d/wikipedia-1.4.0.tar.gz", hash = "sha256:db0fad1829fdd441b1852306e9856398204dc0786d2996dd2e0c8bb8e26133b2", size = 27748, upload-time = "2014-11-15T15:59:49.808Z" }
 
 [[package]]
 name = "win32-setctime"

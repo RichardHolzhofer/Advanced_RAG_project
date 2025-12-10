@@ -8,13 +8,13 @@ from src.config.config import Config
 from src.document_ingestion.document_loader import DocumentLoader
 from src.document_ingestion.document_processor import DocumentProcessor
 from src.utils.utils import save_json
-from src.vectorstore.vectorstore import VectorStore
+from src.vectorstore.vectorstore import RAGVectorStore
 
 class IngestionPipeline:
     def __init__(self):
         self.loader = DocumentLoader()
         self.processor = DocumentProcessor()
-        self.vectorstore = VectorStore()
+        self.vectorstore = RAGVectorStore()
     
     def load_default_content(self):
         return self.loader.load_base_data()
@@ -24,8 +24,8 @@ class IngestionPipeline:
         return crawled_pages
     
     async def process_documents(self, documents):
-        chunked_docs = await self.processor.process_documents(documents)
-        return chunked_docs
+        document_infos, document_chunks = await self.processor.process_documents(documents)
+        return document_infos, document_chunks
     
     def create_vectorstore(self, documents):
         vs = self.vectorstore.create_vectorstore(documents=documents)
@@ -39,16 +39,23 @@ class IngestionPipeline:
         
         to_process = file_paths + crawled_pages
         
-        chunked_docs = await self.process_documents(documents=to_process)
+        document_infos, document_chunks = await self.process_documents(documents=to_process)
         
-        data = [doc.to_json() for doc in chunked_docs]
         
         save_json(
             path="./ingested_documents",
             filename="ingested_docs",
-            file=data
+            file=document_infos
         )
-        vs = self.create_vectorstore(documents=chunked_docs)
+        
+        chunks_data = [chunk.to_json() for chunk in document_chunks]
+        
+        save_json(
+            path="./ingested_documents",
+            filename="ingested_chunks",
+            file=chunks_data
+        )
+        vs = self.create_vectorstore(documents=document_chunks)
         
         self.vectorstore.close_client()
         

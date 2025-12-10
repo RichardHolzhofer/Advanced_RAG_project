@@ -10,9 +10,6 @@ from pathlib import Path
 from src.logger.logger import logging
 from src.exception.exception import RAGException
 from src.config.config import Config
-from src.vectorstore.vectorstore import VectorStore
-
-
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
@@ -25,7 +22,6 @@ from docling.datamodel.base_models import InputFormat
 
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
-
 
 
 class DocumentProcessor(Config): 
@@ -185,7 +181,7 @@ class DocumentProcessor(Config):
                 )
             )
             
-        return final_chunks
+        return full_doc, final_chunks
                 
 
     async def crawl_websites(self, urls):
@@ -220,12 +216,17 @@ class DocumentProcessor(Config):
     async def process_documents(self, inputs):
            
         try:
+            doc_info_list = []
+            all_chunks = []
+            
+            tasks = [self._process_single_document(doc) for doc in inputs]
+            results = await asyncio.gather(*tasks)
 
-            docs = await asyncio.gather(*[self._process_single_document(doc) for doc in inputs])
+            for doc_info, chunks in results:
+                doc_info_list.append(doc_info)
+                all_chunks.extend(chunks)
             
-            all_chunks = list(chain.from_iterable(docs))
-            
-            return all_chunks
+            return doc_info_list, all_chunks
 
         except Exception as e:
             raise RAGException(e, sys)    
