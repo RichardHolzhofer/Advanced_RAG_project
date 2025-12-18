@@ -92,7 +92,7 @@ class RAGVectorStore:
     def create_retriever(self):
         try:
             logging.info("Creating retriever")
-            self.retriever = self.vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k":7, "score_threshold": 0.7})
+            self.retriever = self.vectorstore.as_retriever(search_kwargs={"k":7})
             logging.info("Retriever has been created successfully")
             return self.retriever
         except Exception as e:

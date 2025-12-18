@@ -15,100 +15,94 @@ class GraphBuilder:
         self.nodes = RAGNodes(retriever=retriever,llm=llm)
         self.graph = None
         self.memory = MemorySaver()
-        self.MAX_EXPANSION = 2
+        self.MAX_EXPANSION= 1
         
-    def route_next_step(self, state: RAGState):
-        router_obj = state["next_step"]
-        return router_obj.route
     
-    def route_after_grade(self, state:RAGState):
-        return state["rating"].result
+    def route_query(self, state:RAGState):
+        return state["route"]
     
-    def is_docs_found(self, state:RAGState):
-        if state["retrieved_docs"] == []:
-            return "invoke agent"
-        return "generate answer"
+    def doc_grader(self, state:RAGState):
+        ids= state["relevant_ids"]
+        
+        if not ids:
+            return "agent"
+        return "rag"
     
-    def track_query_expansion(self, state:RAGState):
-        if state["expansion_counter"] >= self.MAX_EXPANSION:
-            return "invoke agent"
+    def hallucination_checker(self, state:RAGState):
+        final_grade= state["final_grade"]
+        expansion_counter = state["expansion_counter"]
         
-        last_docs = set(state.get("last_retrieved_doc_ids", []))
-        curr_docs = set(state.get("retrieved_doc_ids", []))
-        all_docs = set(state.get("all_retrieval_doc_ids", []))
-        
-        
-        if curr_docs.issubset(last_docs) or curr_docs.issubset(all_docs):
-            return "invoke agent"
-        
-        return "retrieve documents"
+        if final_grade == "relevant":
+            return "end_conversation"
+        if final_grade == "not_relevant":
+            return "agent"
+        if final_grade == "partially_relevant" and expansion_counter < self.MAX_EXPANSION:
+            return "expander"
+        return "agent"
+            
+
         
     def build_graph(self):
         graph_builder = StateGraph(RAGState)
         
+        
+        #Nodes
         graph_builder.add_node("rewriter_node", self.nodes.rewrite_query)
-        graph_builder.add_node("router_node", self.nodes.route_selector)
-        graph_builder.add_node("agent_node", self.nodes.invoke_agent)
-        
-        #graph_builder.add_node("web_search_node", self.nodes.web_search)
-        graph_builder.add_node("query_expander_node", self.nodes.expand_query)
-        
-        
+        graph_builder.add_node("router_node", self.nodes.route_query)
+        graph_builder.add_node("conversational_node", self.nodes.conversational_answer)
         graph_builder.add_node("retriever_node", self.nodes.retrieve_documents)
-        #graph_builder.add_node("reranker", self.nodes.rerank_documents)
+        graph_builder.add_node("agent_node", self.nodes.invoke_agent)
+        graph_builder.add_node("grade_documents_node", self.nodes.grade_documents)
         graph_builder.add_node("answer_generator_node", self.nodes.generate_answer)
-        graph_builder.add_node("rate_answer_node", self.nodes.rate_answer)
+        graph_builder.add_node("hallucination_grader_node", self.nodes.grade_hallucination)
+        graph_builder.add_node("query_expander_node", self.nodes.expand_query)
+   
         
         
-        graph_builder.set_entry_point("rewriter_node")
-        #graph_builder.add_edge("retriever", "reranker")
-        
+        #Edges
+        graph_builder.set_entry_point("rewriter_node")      
         graph_builder.add_edge("rewriter_node", "router_node")
+        
         
         graph_builder.add_conditional_edges(
             source="router_node",
-            path=self.route_next_step,
+            path=self.route_query,
             path_map={
-                "agent": "agent_node",
-                #"expand": "query_expander_node",
-                "rag": "retriever_node"
-            }
-            )
-        
-        graph_builder.add_conditional_edges(
-            source="retriever_node",
-            path=self.is_docs_found,
-            path_map={
-                "invoke agent": "agent_node",
-                "generate answer": "answer_generator_node"
-            }
-            
-        )
-        
-        graph_builder.add_edge("answer_generator_node", "rate_answer_node")
-        
-        graph_builder.add_conditional_edges(
-            source="rate_answer_node",
-            path=self.route_after_grade,
-            path_map={
-                "pass": END,
-                "fail": "query_expander_node"
+                "rag": "retriever_node",
+                "chat": "conversational_node",
+                "agent": "agent_node"
             }
         )
         
-        #graph_builder.add_edge("web_search_node", "answer_generator_node")
-        graph_builder.add_edge("query_expander_node", "retriever_node")
+        graph_builder.add_edge("conversational_node", END)
+        graph_builder.add_edge("agent_node", END)
+        
+        
+        
+        graph_builder.add_edge("retriever_node", "grade_documents_node")
         
         graph_builder.add_conditional_edges(
-            source="query_expander_node",
-            path=self.track_query_expansion,
+            source="grade_documents_node",
+            path=self.doc_grader,
             path_map={
-                "retrieve documents": "retriever_node",
-                "invoke agent": "agent_node"
+                "rag": "answer_generator_node",
+                "agent": "agent_node"
+            }
+        )
+        
+        graph_builder.add_edge("answer_generator_node", "hallucination_grader_node")
+        
+        graph_builder.add_conditional_edges(
+            source="hallucination_grader_node",
+            path=self.hallucination_checker,
+            path_map={
+                "end_conversation": END,
+                "expander": "query_expander_node",
+                "agent": "agent_node"
             }
             )
 
-        graph_builder.add_edge("agent_node", END)
+        graph_builder.add_edge("query_expander_node", "retriever_node")
         
         self.graph = graph_builder.compile(checkpointer=self.memory)
         
