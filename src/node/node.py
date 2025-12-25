@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from src.logger.logger import logging
 from src.exception.exception import RAGException
 from src.config.config import Config
-from src.state.state import RAGState, CustomAgentState, ExpandedQueries, Router, GraderDecision, HallucinationGrade
+from src.state.state import RAGState, ExpandedQueries, Router, GraderDecision, HallucinationGrade
 from src.vectorstore.vectorstore import RAGVectorStore
 from src.utils.summarization import create_master_summary
 from langchain_core.documents import Document
@@ -32,8 +32,25 @@ class RAGNodes:
     def __init__(self, retriever, llm):
         self.retriever = retriever
         self.llm = llm
-        self.agent = None
+        self.external_agent = None
+        self.rag_agent = None
         
+        
+    def reset_turn_state(self, state: RAGState):
+        return {
+            # Per-turn execution artifacts
+            "answer": "",
+            "answer_source": None,
+            "frozen_rag_facts": None,
+            "retrieved_docs": [],
+            "retrieved_doc_ids": [],
+            "relevant_ids": None,
+            "context": None,
+            "final_grade": None,
+            "expanded_query_list": None,
+            "expansion_counter": 0,
+        }
+            
         
     def _build_tools(self):
         
@@ -66,67 +83,130 @@ class RAGNodes:
         except Exception as e:
             raise RAGException(e, sys)
     
-    def _build_agent(self):
+    def _build_external_agent(self):
         
         try:
             
-            logging.info("Building agent")
+            logging.info("Building external agent")
         
             tools = self._build_tools()
             
             
-            agent_prompt =  """
-                            You are an expert external knowledge assistant. 
-                            Your task is to answer the user's question using ONLY external sources (Wikipedia, Search).
+            external_agent_prompt =  """
+                            You are an External Knowledge Question-Answering Agent.
 
-                            STRICT GUIDELINES:
-                            1. Use tools to find factual information. 
-                            2. If your search results return NO information about a specific company or entity, 
-                            you MUST state: "I cannot find any information regarding [Entity Name] in external records." 
-                            DO NOT invent details or assume a company exists based on its name.
-                            3. If the user asks a follow-up, use the chat history to understand who they are talking about.
-                            4. Keep answers concise and cite your sources if possible.
+                            Your task is to answer the user’s question using ONLY external, public sources.
+                            You have access to search tools (e.g., web search, Wikipedia).
+
+                            STRICT RULES:
+                            1. Use tools to find factual information before answering.
+                            2. Do NOT use internal knowledge bases, private company data, or assumptions.
+                            3. If the tools return no relevant information, explicitly say:
+                            “I could not find reliable external information to answer this question.”
+                            4. Do NOT hallucinate facts, names, metrics, or events.
+                            5. Keep the answer concise, factual, and directly focused on the question.
+                            6. If multiple sources disagree, state that uncertainty clearly.
+
+                            You are the final authority for this response.
                             """
 
-            agent = create_agent(
+            external_agent = create_agent(
                 model=self.llm,
                 tools=tools,
-                system_prompt=agent_prompt,
-                state_schema=CustomAgentState
+                system_prompt=external_agent_prompt
             )
             
-            self.agent = agent
+            self.external_agent = external_agent
             
-            logging.info("Agent has been built successfully.")
+            logging.info("External agent has been built successfully.")
         
         except Exception as e:
             raise RAGException(e, sys)
         
+    def _build_rag_agent(self):
         
-    def invoke_agent(self, state:RAGState):
         try:
-            logging.info("Invoking agent")
             
-            # Only initializing agent if necessary
-            if not self.agent:
-                    self._build_agent()
+            logging.info("Building RAG agent")
+        
+            tools = self._build_tools()
+            
+            
+            rag_agent_prompt =  """
+                            You are a RAG Augmentation Agent.
 
-            # Getting rewritten query
+                            You are given:
+                            - A trusted internal RAG answer (may be partial or incomplete)
+                            - A user question
+                            - Access to external search tools
+
+                            YOUR ROLE:
+                            Fill in missing information using external sources WITHOUT overwriting or contradicting the internal RAG answer.
+
+                            STRICT RULES:
+                            1. Treat the provided RAG answer as FACTUALLY CORRECT.
+                            2. Use external tools ONLY to find information that is missing or incomplete.
+                            3. NEVER change, reinterpret, or remove information from the RAG answer.
+                            4. If external search succeeds:
+                            - Clearly separate new information from existing RAG content.
+                            5. If external search fails:
+                            - Keep the RAG answer intact.
+                            - Explicitly state that no additional external information was found.
+                            6. Do NOT hallucinate or speculate.
+                            7. Do NOT repeat the entire RAG answer verbatim unless necessary.
+
+                            Your final response must be a clear, combined answer suitable for the end user.
+                            You are NOT allowed to introduce new internal company metrics, KPIs, or performance figures that are not explicitly present in the provided RAG answer.
+
+                            """
+
+            rag_agent = create_agent(
+                model=self.llm,
+                tools=tools,
+                system_prompt=rag_agent_prompt
+            )
+            
+            self.rag_agent = rag_agent
+            
+            logging.info("RAG agent has been built successfully.")
+        
+        except Exception as e:
+            raise RAGException(e, sys)    
+        
+        
+        
+    def invoke_external_agent(self, state:RAGState):
+        try:
+            logging.info("Invoking external agent")
+            
+            #Only initializing agent if necessary
+            if not self.external_agent:
+                    self._build_external_agent()
+                    
+            # Getting original question
+            og_question = state["question"]
+
+            #Getting rewritten query
             rewritten_query = state["rewritten_query"]
 
             # Getting chat history
             messages = list(state.get("chat_history", []))
             
+            external_agent_prompt = f"""
+            You are an external information specialist. Your primary task is to use web search to find missing data.
+    
+            The question is: '{rewritten_query}'
+            """
 
             # Adding question as last HumanMessage to chat history
             messages.append(
                 HumanMessage(
-                    content=rewritten_query
+                    content=external_agent_prompt.strip()
                 )
             )
 
             # Invoking agent with messages only
-            result = self.agent.invoke({
+            result = self.external_agent.invoke({
                 "messages": messages
             })
 
@@ -137,13 +217,109 @@ class RAGNodes:
                     final_answer = msg.content
                     break
                 
-            if not final_answer or "not find any information" in final_answer.lower():
-                final_answer = f"I'm sorry, I couldn't find any verified information about '{rewritten_query}' in my external sources."
+            if final_answer and "not find any information" not in final_answer.lower():
+                pass
+            else:
+                final_answer = f"I was unable to find the answer to your question ('{og_question}') after searching external knowledge sources."
             
             logging.info("Agent answer has been generated successfully.")
 
             return {
-                "answer": final_answer,
+                "answer": final_answer.strip(),
+                "answer_source": "agent_external",
+                "chat_history": result["messages"]
+            }
+                    
+        except Exception as e:
+            logging.info("Agent failed to generate an answer.")
+            raise RAGException(e, sys)
+        
+    def invoke_rag_agent(self, state:RAGState):
+        try:
+            logging.info("Invoking agent")
+            
+            #Only initializing agent if necessary
+            if not self.rag_agent:
+                    self._build_rag_agent()
+                    
+            # Getting original question
+            og_question = state["question"]
+
+            #Getting rewritten query
+            rewritten_query = state["rewritten_query"]
+
+            # Getting chat history
+            messages = list(state.get("chat_history", []))
+            
+            rag_answer = None
+            
+            if state.get("answer_source") == "rag":
+                candidate = state.get("answer", "").strip()
+                if candidate:
+                    rag_answer = candidate
+                    
+            if rag_answer:
+                rag_status = "A partial or complete internal RAG answer is available."
+                rag_section = f"""
+                INTERNAL RAG ANSWER (TRUSTED):
+                {rag_answer}
+                """
+            else:
+                rag_status = "No relevant internal documents were found for this question."
+                rag_section = ""
+                
+            
+            rag_agent_prompt = f"""
+            USER QUESTION:
+            {rewritten_query}
+
+            INTERNAL RAG STATUS:
+            {rag_status}
+
+            {rag_section}
+
+            TASK:
+            Use external public sources to help answer the question.
+
+            RULES:
+            - If an INTERNAL RAG ANSWER is provided above, treat it as fact and ONLY add missing information.
+            - If no INTERNAL RAG ANSWER is provided, answer the question using external sources only.
+            - NEVER assume internal information exists unless explicitly provided.
+            - NEVER use previous conversation answers as factual input.
+            - If external sources do not provide reliable information, say so explicitly.
+
+            Return a single, clear, user-facing answer.
+            """
+
+            # Adding question as last HumanMessage to chat history
+            messages.append(
+                HumanMessage(
+                    content=rag_agent_prompt.strip()
+                )
+            )
+
+            # Invoking agent with messages only
+            result = self.rag_agent.invoke({
+                "messages": messages
+            })
+
+            # Extracting final AI answer
+            final_answer = None
+            for msg in reversed(result["messages"]):
+                if isinstance(msg, AIMessage):
+                    final_answer = msg.content
+                    break
+                
+            if final_answer and "not find any information" not in final_answer.lower():
+                pass
+            else:
+                final_answer = f"I was unable to find the answer to your question ('{og_question}') after searching external knowledge sources."
+            
+            logging.info("Agent answer has been generated successfully.")
+
+            return {
+                "answer": final_answer.strip(),
+                "answer_source": "agent_rag",
                 "chat_history": result["messages"]
             }
                     
@@ -218,7 +394,9 @@ class RAGNodes:
             
             route = router.invoke(formatted_router_prompt).next_step
             
-            return {"route": route}
+            return {
+                "route": route
+                }
         
         except Exception as e:
             raise RAGException(e, sys)
@@ -229,7 +407,7 @@ class RAGNodes:
                 [
                     ("system", """
                                 You are a highly efficient and friendly general-purpose conversational assistant. 
-                                Your sole purpose is to answer simple, non-factual questions.
+                                Your sole purpose is to answer simple, non-factual questions such as greetings, small talk, opinions, or simple arithmetic.
                                 
                                 **Context:** Use the chat history to maintain the flow of conversation.
                                 
@@ -246,7 +424,7 @@ class RAGNodes:
 
             response = self.llm.invoke(formatted_conv_prompt).content
             
-            return {"answer": response}
+            return {"answer": response, "answer_source": "chat"}
         except Exception as e:
             raise RAGException(e, sys)
 
@@ -346,11 +524,13 @@ class RAGNodes:
                         You are a RAG assistant that must answer the user's question based on the provided RAG CONTEXT.
 
                         ***INSTRUCTIONS FOR ANSWERING:***
-                        1.  **Resolved Question:** The 'Question' provided has already been contextualized (pronouns resolved) by an upstream system. Use this as your primary focus.
-                        2.  **RAG Context Use:** ONLY use the "RAG CONTEXT" for factual grounding. If the context does not contain the answer, you must state that the information is unavailable in the internal documents.
-                        3.  **General Knowledge/Math:** If the question is simple math (e.g., "5+5") or common knowledge not found in the RAG CONTEXT, you may use your internal knowledge.
-                        4.  **Chat History Use:** Use the 'Chat History' ONLY for tone and conversational flow, not for factual information.
-                        5.  **Be Concise:** Provide a clear, direct, and concise final answer.
+                        1. **Use only the RAG CONTEXT** for factual grounding.
+                        2. **Do not hallucinate or guess missing information.**
+                        3. **Explicitly call out missing information.** If any part of the user's question is not covered in the context, write:
+                        "NOTE: The context does not contain information about [specific missing details]."
+                        4. Summarize metrics and results that exist in context. Label them clearly as "derived from the following metrics".
+                        5. If all parts of the question are fully covered, just summarize the facts.
+                        6. Keep your answer concise, clear, and structured.
                         """
                     ),
                     MessagesPlaceholder(variable_name="chat_history"),
@@ -372,6 +552,7 @@ class RAGNodes:
         
             return {
                 "answer": response_message.content,
+                "answer_source": "rag",
                 "context": clear_context_string
                 }
         
@@ -381,6 +562,19 @@ class RAGNodes:
         
     def grade_hallucination(self, state:RAGState):
         try:
+            
+            if (
+                state.get("answer_source") == "rag"
+                and state.get("relevant_ids")
+                and state.get("context")
+            ):
+                return {
+                    "final_grade": "relevant",
+                    "expansion_counter": state.get("expansion_counter", 0),
+                    "frozen_rag_facts": state.get("answer")
+                }
+                
+    
             logging.info("Starting hallucination grading (fact-check)")
             
             expansion_counter = state.get("expansion_counter", 0)
@@ -389,7 +583,9 @@ class RAGNodes:
             
             grader_prompt = PromptTemplate.from_template(
                             """
-                            You are a fact-checker. Your task is to strictly compare the "GENERATED ANSWER" against the "RAG CONTEXT" and grade its factual grounding.
+                            You are a strict classifier.
+
+                            Your task is to compare the GENERATED ANSWER against the RAG CONTEXT and assign ONE label.
 
                             **RAG CONTEXT:**
                             ---
@@ -401,24 +597,66 @@ class RAGNodes:
                             {answer}
                             ---
 
-                            **GRADING INSTRUCTIONS:**
-                            1.  **relevant:** If the ENTIRE answer is directly supported by the RAG CONTEXT.
-                            2.  **partially_relevant:** If MOST of the answer is supported by the context, but some minor parts are missing, vague, or unsupported. This indicates insufficient context.
-                            3.  **not_relevant:** If the answer contains major claims not found in the RAG CONTEXT, or if the context directly contradicts the answer. This indicates a hallucination or severe inaccuracy.
-                        
+                            Labels:
+                            relevant:
+                            - All claims are supported by the context
+                            - Answer may be partial
+                            - The answer fully addresses the question using only facts present in the context
+                            - No reasonable query expansion would retrieve the missing information
+
+                            partially_relevant:
+                            - All claims are supported by the context
+                            - Missing information is likely present in the corpus OR
+                            - Missing information could reasonably be retrieved with better search or query reformulation
+
+                            not_relevant:
+                            - Claims are unsupported, hallucinated, contradicted, or unrelated to the context
+                            - One or more claims are clearly unsupported OR contradicted by the context
+                            - OR the answer introduces facts not reasonably inferable from the context
+                            
+                            IMPORTANT PRIORITY RULES:
+
+                            1. If the QUESTION asks for trends, evolution over time, comparisons across periods, or longitudinal analysis,
+                            and the RAG CONTEXT does NOT contain explicit multi-period or time-series data,
+                            you MUST choose "partially_relevant", even if individual metrics appear in the context.
+
+                            2. If the answer explicitly states that the context lacks required information to fully answer the question,
+                            you MUST choose "partially_relevant".
+
+                            3. Only choose "relevant" if:
+                            - All claims are supported by the context AND
+                            - The context fully satisfies the structure and scope of the question.
+
+                            STRICT RULES:
+                            - DO NOT explain your reasoning
+                            - DO NOT restate the answer
+                            - DO NOT generate any additional text
+                            - OUTPUT ONLY ONE WORD from the labels above
+                            - If the answer states that additional information is required to fully answer the question, you MUST choose "partially_relevant".
                             """
                             )
-        
-            formatted_grader_prompt = grader_prompt.format_prompt(context=state["context"], answer=state["answer"])
+
+            
+            formatted_grader_prompt = grader_prompt.format_prompt(context=state.get("frozen_rag_facts") or state["context"], answer=state["answer"])
             
             final_grade = hallucination_grader.invoke(formatted_grader_prompt).grade
             
             logging.info(f"Hallucination grade: {final_grade}")
             
-            return {
+            update = {
                 "final_grade": final_grade,
                 "expansion_counter": expansion_counter
-                }
+            }
+            
+            if (
+                expansion_counter == 0
+                and state.get("answer_source") == "rag"
+                and final_grade in ["relevant", "partially_relevant"]
+                ):
+            
+                update["frozen_rag_facts"] = state["answer"]
+                
+            return update
         except Exception as e:
             raise RAGException(e, sys)
         
@@ -442,6 +680,7 @@ class RAGNodes:
 
             
             example_query = "What was the specific financial outcome detailed in the Q3 2024 quarterly earnings report for the 'Digital Transformation' division, and how did it affect the stock dividend paid to GlobalFinance Corp shareholders?"
+            exampe_query_2 = "Provide a comprehensive overview of GlobalFinance Corp’s performance metrics, including operational, technical, and financial indicators, and identify any gaps where additional data would be required for a complete assessment."
             
             formatted_expander_template = expander_template.format(rewritten_query=state["rewritten_query"])
             

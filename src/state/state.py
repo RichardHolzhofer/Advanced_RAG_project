@@ -13,12 +13,7 @@ from langchain.agents import AgentState
 import uuid
 
 class Validator(BaseModel):
-    is_valid: Literal["yes", "no"] = Field(description="Checks if the expanded query is relevant to the original question.")
-    
-class CustomAgentState(AgentState):
-    input: str
-    output: str
-    
+    is_valid: Literal["yes", "no"] = Field(description="Checks if the expanded query is relevant to the original question.")    
 class Router(BaseModel):
     next_step: Literal["rag", "agent", "chat"] = Field(description="Routes the query to the right execution past.")
 
@@ -48,7 +43,8 @@ class RAGState(TypedDict):
     relevant_ids: Optional[List[str]]
  
     #Answer and context
-    answer: str
+    answer: Optional[str]
+    answer_source: Literal["chat", "rag", "agent_external", "agent_rag"]
     context: Optional[str]
     
     #Hallucination check
@@ -57,5 +53,7 @@ class RAGState(TypedDict):
     #Query expansion tracking
     expansion_counter: Optional[int] = 0
     expanded_query_list: Optional[List[str]]
+    frozen_rag_facts: Optional[str]
+    
 
     
