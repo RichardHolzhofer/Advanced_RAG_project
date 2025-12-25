@@ -605,14 +605,15 @@ class RAGNodes:
                             - No reasonable query expansion would retrieve the missing information
 
                             partially_relevant:
-                            - All claims are supported by the context
-                            - Missing information is likely present in the corpus OR
-                            - Missing information could reasonably be retrieved with better search or query reformulation
+                            - If the answer notes missing information or does not cover all aspects of the question, output "partially_relevant".
+                            - If the question asks for any metric, comparison, trend, or evolution over time, and the context is missing any of these, output "partially_relevant".
+                            - Compare each component of the question to the context; missing subparts trigger "partially_relevant".
 
                             not_relevant:
                             - Claims are unsupported, hallucinated, contradicted, or unrelated to the context
                             - One or more claims are clearly unsupported OR contradicted by the context
                             - OR the answer introduces facts not reasonably inferable from the context
+                            
                             
                             IMPORTANT PRIORITY RULES:
 
@@ -637,7 +638,7 @@ class RAGNodes:
                             )
 
             
-            formatted_grader_prompt = grader_prompt.format_prompt(context=state.get("frozen_rag_facts") or state["context"], answer=state["answer"])
+            formatted_grader_prompt = grader_prompt.format_prompt(context=state["context"], answer=state["answer"])
             
             final_grade = hallucination_grader.invoke(formatted_grader_prompt).grade
             
