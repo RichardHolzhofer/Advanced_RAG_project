@@ -25,33 +25,41 @@ class GraphBuilder:
         ids= state["relevant_ids"]
         
         if not ids:
-            return "agent"
+            return "external_agent"
         return "rag"
     
     def hallucination_checker(self, state:RAGState):
         final_grade= state["final_grade"]
         expansion_counter = state["expansion_counter"]
+        frozen_facts = state["frozen_rag_facts"]
         
         if final_grade == "relevant":
             return "end_conversation"
+        
         if final_grade == "not_relevant":
-            return "agent"
-        if final_grade == "partially_relevant" and expansion_counter < self.MAX_EXPANSION:
+            return "external_agent"
+        
+        #partially relevant
+        if expansion_counter < self.MAX_EXPANSION:
             return "expander"
-        return "agent"
-            
-
+        
+        if frozen_facts:
+            return "rag_agent"
+        
+        return "external_agent"
         
     def build_graph(self):
         graph_builder = StateGraph(RAGState)
         
         
         #Nodes
+        graph_builder.add_node("reset_node", self.nodes.reset_turn_state)
         graph_builder.add_node("rewriter_node", self.nodes.rewrite_query)
         graph_builder.add_node("router_node", self.nodes.route_query)
         graph_builder.add_node("conversational_node", self.nodes.conversational_answer)
         graph_builder.add_node("retriever_node", self.nodes.retrieve_documents)
-        graph_builder.add_node("agent_node", self.nodes.invoke_agent)
+        graph_builder.add_node("external_agent_node", self.nodes.invoke_external_agent)
+        graph_builder.add_node("rag_agent_node", self.nodes.invoke_rag_agent)
         graph_builder.add_node("grade_documents_node", self.nodes.grade_documents)
         graph_builder.add_node("answer_generator_node", self.nodes.generate_answer)
         graph_builder.add_node("hallucination_grader_node", self.nodes.grade_hallucination)
@@ -60,7 +68,8 @@ class GraphBuilder:
         
         
         #Edges
-        graph_builder.set_entry_point("rewriter_node")      
+        graph_builder.set_entry_point("reset_node")  
+        graph_builder.add_edge("reset_node", "rewriter_node")    
         graph_builder.add_edge("rewriter_node", "router_node")
         
         
@@ -70,12 +79,12 @@ class GraphBuilder:
             path_map={
                 "rag": "retriever_node",
                 "chat": "conversational_node",
-                "agent": "agent_node"
+                "agent": "external_agent_node"
             }
         )
         
         graph_builder.add_edge("conversational_node", END)
-        graph_builder.add_edge("agent_node", END)
+        graph_builder.add_edge("external_agent_node", END)
         
         
         
@@ -86,7 +95,7 @@ class GraphBuilder:
             path=self.doc_grader,
             path_map={
                 "rag": "answer_generator_node",
-                "agent": "agent_node"
+                "external_agent": "external_agent_node"
             }
         )
         
@@ -98,11 +107,14 @@ class GraphBuilder:
             path_map={
                 "end_conversation": END,
                 "expander": "query_expander_node",
-                "agent": "agent_node"
+                "external_agent": "external_agent_node",
+                "rag_agent": "rag_agent_node"
             }
             )
 
         graph_builder.add_edge("query_expander_node", "retriever_node")
+        graph_builder.add_edge("external_agent_node", END)
+        graph_builder.add_edge("rag_agent_node", END)
         
         self.graph = graph_builder.compile(checkpointer=self.memory)
         
