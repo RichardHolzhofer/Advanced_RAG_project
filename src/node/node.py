@@ -7,21 +7,16 @@ from src.exception.exception import RAGException
 from src.config.config import Config
 from src.state.state import RAGState, ExpandedQueries, Router, GraderDecision, HallucinationGrade
 from src.vectorstore.vectorstore import RAGVectorStore
-from src.utils.summarization import create_master_summary
 from langchain_core.documents import Document
-from typing import List
-import uuid
+from typing import List 
 
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from langchain_core.output_parsers import StrOutputParser
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_tavily import TavilySearch
-from langchain_core.tools import Tool, tool
+from langchain_core.tools import tool
 from langchain.agents import create_agent
-from langgraph.prebuilt import ToolNode
 
 
 
@@ -34,11 +29,15 @@ class RAGNodes:
         self.llm = llm
         self.external_agent = None
         self.rag_agent = None
+        self.tools = self._build_tools()
         
         
-    def reset_turn_state(self, state: RAGState):
+    def reset_turn_state(self, state: RAGState) -> RAGState:
+        """
+        Resets state for every conversation turn.
+        """
+        logging.info("Resetting conversation state.")
         return {
-            # Per-turn execution artifacts
             "answer": "",
             "answer_source": None,
             "frozen_rag_facts": None,
@@ -53,9 +52,13 @@ class RAGNodes:
             
         
     def _build_tools(self):
+        """
+        Builds Wikipedia and Tavily search for the agents to use later.
+        """
         
         try:
             logging.info("Building Tavily and Wikipedia tools")
+            
             # Building Tavily Tool
             os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
             @tool
@@ -84,12 +87,14 @@ class RAGNodes:
             raise RAGException(e, sys)
     
     def _build_external_agent(self):
+        """
+        AI agent using external tools (Wikipedia + Tavily) for answering queries, it does NOT have access to the internal vector database.
+        """
+        
         
         try:
             
             logging.info("Building external agent")
-        
-            tools = self._build_tools()
             
             
             external_agent_prompt =  """
@@ -112,7 +117,7 @@ class RAGNodes:
 
             external_agent = create_agent(
                 model=self.llm,
-                tools=tools,
+                tools=self.tools,
                 system_prompt=external_agent_prompt
             )
             
@@ -124,13 +129,12 @@ class RAGNodes:
             raise RAGException(e, sys)
         
     def _build_rag_agent(self):
-        
+        """
+        AI agent using external tools (Wikipedia + Tavily) for augmenting partially answered queries, it DOES have access to the internal vector database.
+        """        
         try:
             
-            logging.info("Building RAG agent")
-        
-            tools = self._build_tools()
-            
+            logging.info("Building RAG agent")          
             
             rag_agent_prompt =  """
                             You are a RAG Augmentation Agent.
@@ -162,7 +166,7 @@ class RAGNodes:
 
             rag_agent = create_agent(
                 model=self.llm,
-                tools=tools,
+                tools=self.tools,
                 system_prompt=rag_agent_prompt
             )
             
@@ -176,6 +180,10 @@ class RAGNodes:
         
         
     def invoke_external_agent(self, state:RAGState):
+        """
+        Invocation method of the external agent.
+        """
+        
         try:
             logging.info("Invoking external agent")
             
@@ -183,13 +191,13 @@ class RAGNodes:
             if not self.external_agent:
                     self._build_external_agent()
                     
-            # Getting original question
+            #Getting original question
             og_question = state["question"]
 
             #Getting rewritten query
             rewritten_query = state["rewritten_query"]
 
-            # Getting chat history
+            #Getting chat history
             messages = list(state.get("chat_history", []))
             
             external_agent_prompt = f"""
@@ -198,19 +206,19 @@ class RAGNodes:
             The question is: '{rewritten_query}'
             """
 
-            # Adding question as last HumanMessage to chat history
+            #Adding question as last HumanMessage to chat history
             messages.append(
                 HumanMessage(
                     content=external_agent_prompt.strip()
                 )
             )
 
-            # Invoking agent with messages only
+            #Invoking agent with messages only
             result = self.external_agent.invoke({
                 "messages": messages
             })
 
-            # Extracting final AI answer
+            #Extracting final AI answer
             final_answer = None
             for msg in reversed(result["messages"]):
                 if isinstance(msg, AIMessage):
@@ -226,7 +234,7 @@ class RAGNodes:
 
             return {
                 "answer": final_answer.strip(),
-                "answer_source": "agent_external",
+                "answer_source": "external_agent",
                 "chat_history": result["messages"]
             }
                     
@@ -235,6 +243,10 @@ class RAGNodes:
             raise RAGException(e, sys)
         
     def invoke_rag_agent(self, state:RAGState):
+        """
+        Invocation method of the RAG agent which tries to provide a complete answer for partially answered queries by using tools (Wikipedia + Tavily).
+        """
+        
         try:
             logging.info("Invoking agent")
             
@@ -291,19 +303,19 @@ class RAGNodes:
             Return a single, clear, user-facing answer.
             """
 
-            # Adding question as last HumanMessage to chat history
+            #Adding question as last HumanMessage to chat history
             messages.append(
                 HumanMessage(
                     content=rag_agent_prompt.strip()
                 )
             )
 
-            # Invoking agent with messages only
+            #Invoking agent with messages only
             result = self.rag_agent.invoke({
                 "messages": messages
             })
 
-            # Extracting final AI answer
+            #Extracting final AI answer
             final_answer = None
             for msg in reversed(result["messages"]):
                 if isinstance(msg, AIMessage):
@@ -319,7 +331,7 @@ class RAGNodes:
 
             return {
                 "answer": final_answer.strip(),
-                "answer_source": "agent_rag",
+                "answer_source": "rag_agent",
                 "chat_history": result["messages"]
             }
                     
@@ -329,6 +341,13 @@ class RAGNodes:
     
     
     def rewrite_query(self, state:RAGState):
+        """
+        Docstring for rewrite_query
+        
+        :param self: Description
+        :param state: Description
+        :type state: RAGState
+        """
         
         try:
             logging.info("Rewriting query has been started.")
@@ -364,6 +383,13 @@ class RAGNodes:
         
         
     def route_query(self, state:RAGState):
+        """
+        Routes the query to the most relevant node for faster response time.
+        
+        Simple queries -> 'chat' -> Conversational node
+        Internal knowledge related queries -> 'rag' -> Retriever node
+        Queries not related to internal database but require tool usage -> 'agent' -> External agent node
+        """
         try:
         
             router = self.llm.with_structured_output(Router)
@@ -401,7 +427,10 @@ class RAGNodes:
         except Exception as e:
             raise RAGException(e, sys)
         
-    def conversational_answer(self, state:RAGState):
+    def conversational_answer(self, state:RAGState) -> RAGState:
+        """
+        LLM which directly answers simple, non-factual questions, without accessing the vector database or external tools.
+        """
         try:
             conv_prompt = ChatPromptTemplate.from_messages(
                 [
@@ -429,6 +458,9 @@ class RAGNodes:
             raise RAGException(e, sys)
 
     def retrieve_documents(self, state:RAGState) -> RAGState:
+        """
+        Retrieves documents from the vector store.
+        """
         try:
             logging.info("Retrieving relevant documents")
             
@@ -451,7 +483,10 @@ class RAGNodes:
         except Exception as e:
             raise RAGException(e, sys)
         
-    def grade_documents(self, state:RAGState):
+    def grade_documents(self, state:RAGState) -> RAGState:
+        """
+        Grades the retieved chunks and outputs a list of chunks ids which are relevant to the query.
+        """
         try:
             logging.info("Grading documents for relevance using LLM.")
             
@@ -506,6 +541,9 @@ class RAGNodes:
                 
   
     def generate_answer(self, state:RAGState) -> RAGState:
+        """
+        Based on the retrieved relevant chunk contexts, it formulates the answer to the query.
+        """
         
         try:
             logging.info("Answer generation has started")
@@ -560,21 +598,9 @@ class RAGNodes:
             raise RAGException(e, sys)
         
         
-    def grade_hallucination(self, state:RAGState):
+    def grade_hallucination(self, state: RAGState) -> RAGState:
         try:
-            
-            if (
-                state.get("answer_source") == "rag"
-                and state.get("relevant_ids")
-                and state.get("context")
-            ):
-                return {
-                    "final_grade": "relevant",
-                    "expansion_counter": state.get("expansion_counter", 0),
-                    "frozen_rag_facts": state.get("answer")
-                }
-                
-    
+
             logging.info("Starting hallucination grading (fact-check)")
             
             expansion_counter = state.get("expansion_counter", 0)
@@ -583,9 +609,12 @@ class RAGNodes:
             
             grader_prompt = PromptTemplate.from_template(
                             """
-                            You are a strict classifier.
+                            You are a strict classifier. Your task is to compare the GENERATED ANSWER against the RAG CONTEXT and the USER QUESTION to assign ONE label.
 
-                            Your task is to compare the GENERATED ANSWER against the RAG CONTEXT and assign ONE label.
+                            **USER QUESTION:**
+                            ---
+                            {rewritten_query}
+                            ---
 
                             **RAG CONTEXT:**
                             ---
@@ -598,47 +627,36 @@ class RAGNodes:
                             ---
 
                             Labels:
+
                             relevant:
-                            - All claims are supported by the context
-                            - Answer may be partial
-                            - The answer fully addresses the question using only facts present in the context
-                            - No reasonable query expansion would retrieve the missing information
+                            - All claims are fully supported by the context.
+                            - The answer completely addresses every part of the USER QUESTION.
+                            - No subpart of the question is missing from the answer.
 
                             partially_relevant:
-                            - If the answer notes missing information or does not cover all aspects of the question, output "partially_relevant".
-                            - If the question asks for any metric, comparison, trend, or evolution over time, and the context is missing any of these, output "partially_relevant".
-                            - Compare each component of the question to the context; missing subparts trigger "partially_relevant".
+                            - The answer is factually correct based on context, BUT it fails to address the entire USER QUESTION.
+                            - If the answer explicitly states that some information is not present in the context, choose this.
+                            - If the question asks for multiple metrics and only one is provided, choose this.
 
                             not_relevant:
-                            - Claims are unsupported, hallucinated, contradicted, or unrelated to the context
-                            - One or more claims are clearly unsupported OR contradicted by the context
-                            - OR the answer introduces facts not reasonably inferable from the context
-                            
-                            
+                            - Claims are unsupported, hallucinated, or contradicted by the context.
+
                             IMPORTANT PRIORITY RULES:
-
-                            1. If the QUESTION asks for trends, evolution over time, comparisons across periods, or longitudinal analysis,
-                            and the RAG CONTEXT does NOT contain explicit multi-period or time-series data,
-                            you MUST choose "partially_relevant", even if individual metrics appear in the context.
-
-                            2. If the answer explicitly states that the context lacks required information to fully answer the question,
-                            you MUST choose "partially_relevant".
-
-                            3. Only choose "relevant" if:
-                            - All claims are supported by the context AND
-                            - The context fully satisfies the structure and scope of the question.
+                            1. If the answer explicitly notes missing information required to fully answer the QUESTION, you MUST choose "partially_relevant".
+                            2. Compare the ANSWER to the QUESTION strictly. If the Question asks for "Revenue and Net Profit" and the Answer only provides "Revenue", the grade MUST be "partially_relevant".
 
                             STRICT RULES:
                             - DO NOT explain your reasoning
-                            - DO NOT restate the answer
-                            - DO NOT generate any additional text
-                            - OUTPUT ONLY ONE WORD from the labels above
-                            - If the answer states that additional information is required to fully answer the question, you MUST choose "partially_relevant".
+                            - OUTPUT ONLY ONE WORD: relevant, partially_relevant, or not_relevant
                             """
                             )
 
-            
-            formatted_grader_prompt = grader_prompt.format_prompt(context=state["context"], answer=state["answer"])
+            # 2. UPDATED FORMAT CALL: Passed rewritten_query=state["rewritten_query"]
+            formatted_grader_prompt = grader_prompt.format_prompt(
+                context=state["context"], 
+                answer=state["answer"],
+                rewritten_query=state["rewritten_query"] 
+            )
             
             final_grade = hallucination_grader.invoke(formatted_grader_prompt).grade
             
@@ -658,12 +676,17 @@ class RAGNodes:
                 update["frozen_rag_facts"] = state["answer"]
                 
             return update
+
         except Exception as e:
             raise RAGException(e, sys)
         
-    def expand_query(self, state:RAGState):
+    def expand_query(self, state:RAGState) -> RAGState:
+        """
+        Expands the query to 3 different search queries to improve retrieved context.
+        """
         try:
             logging.info("Query expansion has been triggered.")
+            
             expander = self.llm.with_structured_output(ExpandedQueries)
             expander_template ="""
             You are a Search Query Optimizer. The previous search for the question: 
@@ -678,10 +701,6 @@ class RAGNodes:
             3.  **Synonyms:** Use professional synonyms or related technical terms.
             
             """
-
-            
-            example_query = "What was the specific financial outcome detailed in the Q3 2024 quarterly earnings report for the 'Digital Transformation' division, and how did it affect the stock dividend paid to GlobalFinance Corp shareholders?"
-            exampe_query_2 = "Provide a comprehensive overview of GlobalFinance Corp’s performance metrics, including operational, technical, and financial indicators, and identify any gaps where additional data would be required for a complete assessment."
             
             formatted_expander_template = expander_template.format(rewritten_query=state["rewritten_query"])
             
@@ -690,14 +709,10 @@ class RAGNodes:
             new_query_string = " ".join([query for query in new_queries])
             
             logging.info("Original query has been expanded.")
-            
-            current_count = state.get("expansion_counter", 0)
-            
-            
+             
             return {
                 "rewritten_query": new_query_string,
-                "expanded_query_list": new_queries,
-                "expansion_counter": current_count + 1
+                "expanded_query_list": new_queries
                 }
         
         except Exception as e:
