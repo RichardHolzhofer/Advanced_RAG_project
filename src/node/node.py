@@ -4,14 +4,10 @@ from dotenv import load_dotenv
 
 from src.logger.logger import logging
 from src.exception.exception import RAGException
-from src.config.config import Config
 from src.state.state import RAGState, ExpandedQueries, Router, GraderDecision, HallucinationGrade
-from src.vectorstore.vectorstore import RAGVectorStore
-from langchain_core.documents import Document
-from typing import List 
 
 from langchain_core.prompts import MessagesPlaceholder, ChatPromptTemplate, PromptTemplate
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
 from langchain_tavily import TavilySearch

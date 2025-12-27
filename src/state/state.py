@@ -1,21 +1,14 @@
-import os
-import sys
-
-from src.logger.logger import logging
-from src.exception.exception import RAGException
-
 from typing import List, TypedDict, Annotated, Literal, Optional
 from pydantic import BaseModel, Field
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
-from langchain.agents import AgentState
-import uuid
+
 
 class Validator(BaseModel):
     is_valid: Literal["yes", "no"] = Field(description="Checks if the expanded query is relevant to the original question.")    
 class Router(BaseModel):
-    next_step: Literal["rag", "agent", "chat"] = Field(description="Routes the query to the right execution past.")
+    next_step: Literal["rag", "agent", "chat"] = Field(description="Routes the query to the right execution path.")
 
 class GraderDecision(BaseModel):
     relevant_ids: List[str] = Field(
