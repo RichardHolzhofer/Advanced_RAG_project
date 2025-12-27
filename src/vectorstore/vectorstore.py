@@ -1,27 +1,33 @@
-import os
 import sys
 from src.logger.logger import logging
 from src.exception.exception import RAGException
 from src.config.config import Config
 from qdrant_client import QdrantClient, models
 from langchain_qdrant import QdrantVectorStore, RetrievalMode, FastEmbedSparse
-from langchain_core.documents import Document
 from qdrant_client.http.models import Distance, SparseVectorParams, VectorParams
-from langchain_community.vectorstores import InMemoryVectorStore
-import uuid
 
 
 class RAGVectorStore:
     def __init__(self):
-        self.llm = Config.get_llm_model()
-        self.embeddings = Config.get_embedding_model()
-        self.persist_path = "./qdrant_db"
-        self.client = QdrantClient(path=self.persist_path)
-        self.collection_name = "my_collection"
-        self.vectorstore = None
-        self.retriever = None
+        """
+        Initializes RAG vector store.
+        """
+        try:
+            self.llm = Config.get_llm_model()
+            self.embeddings = Config.get_embedding_model()
+            self.persist_path = "./qdrant_db"
+            self.client = QdrantClient(path=self.persist_path)
+            self.collection_name = "my_collection"
+            self.vectorstore = None
+            self.retriever = None
+            
+        except Exception as e:
+            raise RAGException(e, sys)
     
     def load_vectorstore(self):
+        """
+        Loads an existing vector store saved under 'persist_path'.
+        """
         
         try:
             logging.info("Loading vector store.")
@@ -30,10 +36,10 @@ class RAGVectorStore:
                 embedding=self.embeddings,
                 collection_name=self.collection_name,
                 vector_name="dense",
-                retrieval_mode=RetrievalMode.HYBRID,
+                retrieval_mode=RetrievalMode.HYBRID, #This allowes hybrid search using dense and sparse vectors
                 distance=Distance.COSINE,
                 sparse_vector_name="sparse",
-                sparse_embedding=FastEmbedSparse(model_name="Qdrant/bm25")
+                sparse_embedding=FastEmbedSparse(model_name="Qdrant/bm25") #Sparse embedding model
             )
             
             logging.info("Vector store has been loaded successfully.")
@@ -43,6 +49,9 @@ class RAGVectorStore:
             raise RAGException(e, sys)
         
     def _add_documents(self, documents):
+        """
+        Adds documents (langchain Document objects) to the vector store provided under 'documents'.
+        """
         try:
             logging.info("Uploading documents to the vector store")
             doc_ids = [doc.id for doc in documents]
@@ -52,6 +61,9 @@ class RAGVectorStore:
             raise RAGException(e, sys)
         
     def close_client(self):
+        """
+        Closes connection to the vector store.
+        """
         try:
             if self.client:
                 self.client.close()
@@ -59,15 +71,19 @@ class RAGVectorStore:
             raise RAGException(e, sys)
         
     def create_vectorstore(self, documents):
+        """
+        Creates a persistant vector store and loads the langchain Document objects into it specified under 'documents'.
+        """
         
         try:
             logging.info("Creating vector store")    
             self.client.create_collection(
                 collection_name=self.collection_name,
-                vectors_config={"dense": VectorParams(size=1536, distance=Distance.COSINE)},
+                vectors_config={"dense": VectorParams(size=1536, distance=Distance.COSINE)}, #Change this depending on your dense embedding model
                 sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams(on_disk=False))}
             )
             
+            #Sparse embedding model
             sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
             
             
@@ -76,11 +92,12 @@ class RAGVectorStore:
                 collection_name=self.collection_name,
                 embedding=self.embeddings,
                 sparse_embedding=sparse_embeddings,
-                retrieval_mode=RetrievalMode.HYBRID,
+                retrieval_mode=RetrievalMode.HYBRID, #This allowes hybrid search using dense and sparse vectors
                 vector_name="dense",
                 sparse_vector_name="sparse"
             )
             
+            #Adding documents to vector store
             self._add_documents(documents=documents)
             
             logging.info("Vector store has been created successfully.")
@@ -90,9 +107,12 @@ class RAGVectorStore:
             raise RAGException(e,sys)
     
     def create_retriever(self):
+        """
+        Creates a retriever which fetches documents from the vector store.
+        """
         try:
             logging.info("Creating retriever")
-            self.retriever = self.vectorstore.as_retriever(search_kwargs={"k":7})
+            self.retriever = self.vectorstore.as_retriever(search_kwargs={"k":7}) #Change 'k' to modified the number of documents to be fetched
             logging.info("Retriever has been created successfully")
             return self.retriever
         except Exception as e:

@@ -1,9 +1,7 @@
-import os
 import sys
 
 from src.logger.logger import logging
 from src.exception.exception import RAGException
-from src.config.config import Config
 from src.state.state import RAGState
 from src.node.node import RAGNodes
 
@@ -12,48 +10,89 @@ from langgraph.checkpoint.memory import MemorySaver
 
 class GraphBuilder:
     def __init__(self,retriever, llm):
+        """
+        Initializes graph building object.
+        """
         
-        logging.info("Initiating graph building.")
-        self.nodes = RAGNodes(retriever=retriever,llm=llm)
-        self.graph = None
-        self.memory = MemorySaver()
-        self.MAX_EXPANSION= 1
+        try:
+            logging.info("Initiating graph building.")
+            self.nodes = RAGNodes(retriever=retriever,llm=llm)
+            self.graph = None
+            self.memory = MemorySaver()
+            self.MAX_EXPANSION= 1
+            
+        except Exception as e:
+            raise RAGException(e, sys)
         
-    
     def route_query(self, state:RAGState):
-        return state["route"]
+        """
+        Routes query to the most appropriate execution path ('chat', 'rag' or 'agent').
+        """
+        try:
+            logging.info(f"Query has been routed to {state['route']}")
+            return state["route"]
+        
+        except Exception as e:
+            raise RAGException(e, sys)
     
     def doc_grader(self, state:RAGState):
-        ids= state["relevant_ids"]
+        """
+        Checks if relevant document IDs were found and routes to query to either 'external_agent' or 'rag'.
+        """
         
-        if not ids:
-            return "external_agent"
-        return "rag"
+        try:
+            
+            ids= state["relevant_ids"]
+            
+            if not ids:
+                logging.info("No relevant IDs found, query routed to 'external_agent'.")
+                return "external_agent"
+            logging.info("Relevant IDs have been found, query routed to 'rag'.")
+            return "rag"
+        
+        except Exception as e:
+            raise RAGException(e, sys)
     
     def hallucination_checker(self, state:RAGState):
-        final_grade= state["final_grade"]
-        expansion_counter = state["expansion_counter"]
-        frozen_facts = state["frozen_rag_facts"]
-        
-        if final_grade == "relevant":
-            return "end_conversation"
-        
-        if final_grade == "not_relevant":
+        """
+        Based on the grading of the generated answer to the question, it routes the execution path to the relevant node.
+        """
+        try:
+            final_grade= state["final_grade"]
+            expansion_counter = state["expansion_counter"]
+            frozen_facts = state["frozen_rag_facts"]
+            
+            if final_grade == "relevant":
+                logging.info("Answer is relevant, conversation to be ended.")
+                return "end_conversation"
+            
+            if final_grade == "not_relevant":
+                logging.info("Answer is not relevant, routed to 'external_agent'.")
+                return "external_agent"
+            
+            #partially relevant
+            if expansion_counter < self.MAX_EXPANSION:
+                state["expansion_counter"] = expansion_counter + 1
+                
+                logging.info("Answer is partially relevant, routed to query expansion.")
+                return "expander"
+            
+            if frozen_facts:
+                logging.info("Answer is only partially relevant after query expansion, routed to 'rag_agent'.")
+                return "rag_agent"
+            
+            logging.info("Fallback to 'external_agent' for answering.")
             return "external_agent"
         
-        #partially relevant
-        if expansion_counter < self.MAX_EXPANSION:
-            state["expansion_counter"] = expansion_counter + 1
-            return "expander"
-        
-        if frozen_facts:
-            return "rag_agent"
-        
-        return "external_agent"
+        except Exception as e:
+            raise RAGException(e, sys)
         
     def build_graph(self):
+        """
+        Builds StateGraph using nodes and edges to define execution path.
+        """
         try:
-            logging.info("Building graph...")
+            logging.info("Building graph has been started.")
             graph_builder = StateGraph(RAGState)
             
             
@@ -77,7 +116,7 @@ class GraphBuilder:
             graph_builder.add_edge("reset_node", "rewriter_node")    
             graph_builder.add_edge("rewriter_node", "router_node")
             
-            
+            #Router node logic
             graph_builder.add_conditional_edges(
                 source="router_node",
                 path=self.route_query,
@@ -91,10 +130,9 @@ class GraphBuilder:
             graph_builder.add_edge("conversational_node", END)
             graph_builder.add_edge("external_agent_node", END)
             
-            
-            
             graph_builder.add_edge("retriever_node", "grade_documents_node")
             
+            #Grader node logic
             graph_builder.add_conditional_edges(
                 source="grade_documents_node",
                 path=self.doc_grader,
@@ -106,6 +144,7 @@ class GraphBuilder:
             
             graph_builder.add_edge("answer_generator_node", "hallucination_grader_node")
             
+            #Hallucination grader node logic
             graph_builder.add_conditional_edges(
                 source="hallucination_grader_node",
                 path=self.hallucination_checker,
@@ -121,6 +160,7 @@ class GraphBuilder:
             graph_builder.add_edge("external_agent_node", END)
             graph_builder.add_edge("rag_agent_node", END)
             
+            #Compiling and adding checkpointer for memory
             self.graph = graph_builder.compile(checkpointer=self.memory)
             logging.info("Graph has been built successfully.")
             

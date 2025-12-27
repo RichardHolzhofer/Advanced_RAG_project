@@ -1,4 +1,3 @@
-import os
 import sys
 from src.logger.logger import logging
 from src.exception.exception import RAGException
@@ -13,6 +12,9 @@ class DocumentLoader:
         self.url_path = Path(url_path)
         
     def load_documents(self):
+        """
+        Loads documents from a folder specified under 'docs_path' in the initialization method.
+        """
         try:
             logging.info(f"Loading files from the following folder: {self.docs_path}")
             return [f for f in self.docs_path.glob("*") if validate_input(f) == 'file']
@@ -20,6 +22,9 @@ class DocumentLoader:
             raise RAGException(e, sys)
 
     def load_urls(self):
+        """
+        Loads urls from a JSON file specified under 'url_path' in the initialization method.
+        """
         try:
             with open(self.url_path, 'r') as f:
                 urls = json.load(f)
@@ -32,6 +37,9 @@ class DocumentLoader:
             raise RAGException(e, sys)
     
     def load_base_data(self):
+        """
+        Loads documents and urls.
+        """
         try:
             return self.load_documents(), self.load_urls()
         except Exception as e:

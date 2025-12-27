@@ -42,22 +42,26 @@ def categorize_site(url: str):
         """
         Categorizes a site based on available endpoint.
         """
-        endpoints = [
-            ("llm_text", "llms-full.txt"),
-            ("sitemap", "sitemap.xml")
-        ]
+        try:
+            endpoints = [
+                ("llm_text", "llms-full.txt"),
+                ("sitemap", "sitemap.xml")
+            ]
 
-        for category, endpoint in endpoints:
-            target = urljoin(url if url.endswith("/") else url + "/", endpoint)
+            for category, endpoint in endpoints:
+                target = urljoin(url if url.endswith("/") else url + "/", endpoint)
 
-            try:
-                resp = requests.get(target, timeout=5, allow_redirects=True)
-                if resp.status_code == 200:
-                    return category, target
-            except requests.RequestException:
-                pass
+                try:
+                    resp = requests.get(target, timeout=5, allow_redirects=True)
+                    if resp.status_code == 200:
+                        return category, target
+                except requests.RequestException:
+                    pass
 
-        return "basic", url
+            return "basic", url
+        
+        except Exception as e:
+            raise RAGException(e, sys)
 
 
 
@@ -65,52 +69,62 @@ def build_final_url_list(urls):
     """
     Builds the final url list, which in case of 'sitemap' extracts all the underlying URLs from the website.
     """
-    logging.info("Building final URL list...")
+    try:
+        logging.info("Building final URL list...")
 
-    final_urls = []
+        final_urls = []
 
-    for url in urls:
-        category, resolved = categorize_site(url)
+        for url in urls:
+            category, resolved = categorize_site(url)
 
-        if category == "sitemap":
-            try:
-                logging.info(f"Parsing sitemap: {resolved}")
-                resp = requests.get(resolved, timeout=10)
+            if category == "sitemap":
+                try:
+                    logging.info(f"Parsing sitemap: {resolved}")
+                    resp = requests.get(resolved, timeout=10)
 
-                root = ElementTree.fromstring(resp.content)
-                ns = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+                    root = ElementTree.fromstring(resp.content)
+                    ns = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
-                extracted_urls = [loc.text for loc in root.findall(".//ns:loc", ns)]
-                logging.info(f"Sitemap contains {len(extracted_urls)} URLs")
+                    extracted_urls = [loc.text for loc in root.findall(".//ns:loc", ns)]
+                    logging.info(f"Sitemap contains {len(extracted_urls)} URLs")
 
-                final_urls.extend(extracted_urls)
-                continue
+                    final_urls.extend(extracted_urls)
+                    continue
 
-            except Exception as e:
-                logging.error(f"Failed to parse sitemap {resolved}: {e}")
-                final_urls.append(url)
-                continue
+                except Exception as e:
+                    logging.error(f"Failed to parse sitemap {resolved}: {e}")
+                    final_urls.append(url)
+                    continue
 
-        final_urls.append(resolved)
+            final_urls.append(resolved)
 
-    logging.info(f"Final URL count: {len(final_urls)}")
-    return final_urls
+        logging.info(f"Final URL count: {len(final_urls)}")
+        return final_urls
+    
+    except Exception as e:
+        raise RAGException(e, sys)
 
 def save_json(path, filename, file):
     """
     Saves objects as JSON to a user provided path.
     """
+    try:
+        os.makedirs(f"./{path}", exist_ok=True)
+        with open (f"./{path}/{filename}.json", "w", encoding='utf-8') as f:
+                json.dump(file, f, ensure_ascii=False)
     
-    os.makedirs(f"./{path}", exist_ok=True)
-    with open (f"./{path}/{filename}.json", "w", encoding='utf-8') as f:
-            json.dump(file, f, ensure_ascii=False)
+    except Exception as e:
+        raise RAGException(e, sys)
             
 def load_json(path):
     """
     Loads objects as JSON from a user provided path.
     """
+    try:
+        with open (f"{path}", "r", encoding='utf-8') as f:
+                data = json.load(f)
+                
+        return data
     
-    with open (f"{path}", "r", encoding='utf-8') as f:
-            data = json.load(f)
-            
-    return data
+    except Exception as e:
+        raise RAGException(e, sys)
