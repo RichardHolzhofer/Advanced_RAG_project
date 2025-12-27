@@ -26,6 +26,7 @@ class HallucinationGrade(BaseModel):
 
 class ExpandedQueries(BaseModel):
     queries: List[str] = Field(description="List of 3 alternative search queries, each one distinct from the others.")
+    
 class RAGState(TypedDict):
     question: str
     chat_history: Annotated[List[BaseMessage], add_messages]
@@ -44,7 +45,7 @@ class RAGState(TypedDict):
  
     #Answer and context
     answer: Optional[str]
-    answer_source: Literal["chat", "rag", "agent_external", "agent_rag"]
+    answer_source: Literal["chat", "rag", "external_agent", "rag_agent"]
     context: Optional[str]
     
     #Hallucination check

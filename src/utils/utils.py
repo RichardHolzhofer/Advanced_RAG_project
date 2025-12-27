@@ -11,6 +11,9 @@ import json
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".pptx", ".md", ".csv", ".html", ".xhtml", ".mp3"}
 
 def validate_input(file_or_url):
+    """
+    Validates document formats and URLs.
+    """
     
     try:
         logging.info(f"Validating input file or url: {file_or_url}")
@@ -37,7 +40,7 @@ def validate_input(file_or_url):
     
 def categorize_site(url: str):
         """
-        Categorize a site based on available endpoint.
+        Categorizes a site based on available endpoint.
         """
         endpoints = [
             ("llm_text", "llms-full.txt"),
@@ -59,6 +62,9 @@ def categorize_site(url: str):
 
 
 def build_final_url_list(urls):
+    """
+    Builds the final url list, which in case of 'sitemap' extracts all the underlying URLs from the website.
+    """
     logging.info("Building final URL list...")
 
     final_urls = []
@@ -91,12 +97,18 @@ def build_final_url_list(urls):
     return final_urls
 
 def save_json(path, filename, file):
+    """
+    Saves objects as JSON to a user provided path.
+    """
     
     os.makedirs(f"./{path}", exist_ok=True)
     with open (f"./{path}/{filename}.json", "w", encoding='utf-8') as f:
             json.dump(file, f, ensure_ascii=False)
             
 def load_json(path):
+    """
+    Loads objects as JSON from a user provided path.
+    """
     
     with open (f"{path}", "r", encoding='utf-8') as f:
             data = json.load(f)
