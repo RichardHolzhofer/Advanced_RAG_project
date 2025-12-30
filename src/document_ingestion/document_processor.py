@@ -22,6 +22,9 @@ from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import InputFormat
 from docling_core.transforms.chunker.hierarchical_chunker import ChunkingSerializerProvider, ChunkingDocSerializer
 from docling_core.transforms.serializer.markdown import MarkdownTableSerializer
+from docling.datamodel.pipeline_options import PdfPipelineOptions, AcceleratorOptions, AcceleratorDevice, granite_picture_description, TableFormerMode
+from docling.document_converter import PdfFormatOption
+
 
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
@@ -32,7 +35,27 @@ class DocumentProcessor(Config):
     MAX_TOKENS = 512
     def __init__(self):
         self.llm = Config.get_llm_model()
-        self.converter = DocumentConverter()
+        
+
+        #Configuration of pipeline options for better image/table extraction
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = True
+        pipeline_options.do_table_structure = True
+        pipeline_options.table_structure_options.do_cell_matching = True
+        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+        pipeline_options.do_picture_description = True
+        pipeline_options.picture_description_options = granite_picture_description
+        
+        #Hardware acceleration
+        pipeline_options.accelerator_options = AcceleratorOptions(
+            num_threads=4, device=AcceleratorDevice.AUTO
+        )
+        
+        self.converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
+        )
         self.tokenizer = HuggingFaceTokenizer(tokenizer=AutoTokenizer.from_pretrained(self.EMBED_MODEL_ID), max_tokens=self.MAX_TOKENS)
         
         class MDTableSerializerProvider(ChunkingSerializerProvider):

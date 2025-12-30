@@ -11,7 +11,6 @@ load_dotenv()
 
 class Config:
     
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     LLM_MODEL = "openai:gpt-4o-mini"
     EMBEDDING_MODEL = "text-embedding-3-small"

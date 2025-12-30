@@ -4,16 +4,12 @@ langchain_core
 langchain_community
 langgraph
 langchain_openai
-langchain_groq
 python-dotenv
-openai-whisper
 crawl4ai
 requests
 transformers
 sentence-transformers
 docling_core
-langchain_postgres
-rank_bm25
 streamlit
 playwright
 qdrant-client
@@ -22,5 +18,3 @@ fastembed
 tavily-python
 wikipedia
 langchain-tavily
-hf-xet
-ffmpeg-python
