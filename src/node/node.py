@@ -355,9 +355,10 @@ class RAGNodes:
                                 into a highly effective, standalone search query, suitable for retrieval from a vector store or external search engine.
 
                                 **INSTRUCTIONS:**
-                                1.  **Contextualize:** If the current user query is ambiguous or relies on previous conversation history (provided in 'chat_history'), rewrite it to be fully self-contained.
-                                2.  **Specific:** Ensure the rewritten query is maximally specific and detailed.
-                                3.  **Default/Simple Queries:** If the user's query is already clear, self-contained, simple, or nonsensical, **return the word 'suitable'.** Do NOT inject any additional language or commentary.
+                                1.  **Contextualize:** If the current query refers to entities or concepts from the 'chat_history' (e.g., "it", "them", "that philosophy", "he"), replace the pronoun with the specific entity name from history.
+                                2.  **Neutral resolution:** Resolve references NEUTRALLY. If the user asks "Who created this?", rewrite to "Who created [Entity Name]". Do NOT assume titles like "Chief Architect" or specific roles unless explicitly mentioned.
+                                3.  **Specific:** Ensure the rewritten query is maximally specific and detailed.
+                                4.  **Default/Simple Queries:** If the user's query is already clear, self-contained, simple, or nonsensical, **return the word 'suitable'.** Do NOT inject any additional language or commentary.
                                 """
                                     ),
                     MessagesPlaceholder(variable_name='chat_history'),
@@ -402,8 +403,9 @@ class RAGNodes:
                                 2.  **agent**: Choose agent if the query asks for **general, external, or current world knowledge** that is factual but NOT about the internal company (e.g., historical events, current world leaders, common science facts).
                                     * *Example: "Who is the Prime Minister of Canada?"*
                                 
-                                3.  **chat**: Choose chat **ONLY** if the query is strictly conversational, subjective, or a simple utility function. This includes: greetings, small talk, opinions, or simple arithmetic. **NEVER route a factual query to CHAT.**
+                                3.  **chat**: Choose chat **ONLY** if the query is strictly conversational, subjective, or a simple utility function. This includes: greetings, small talk, opinions, or simple arithmetic. **NEVER route a factual query to CHAT.** 
                                     * *Example: "How are you today?" or "What is 10 plus 5?"*
+                                    * *Anti-Example: "When was this created?" (Route to RAG/Agent)*
 
                                 **Your output must be ONLY the single word: rag, agent, or chat.**
                                 """

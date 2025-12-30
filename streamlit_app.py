@@ -97,9 +97,10 @@ def main():
                 
                 try:
                     with st.spinner(f"Running graph for '{question}'..."):
+                        run_config = {'configurable': {'thread_id': str(uuid.uuid4())}}
                         final_state = st.session_state.rag_system.invoke(
                             initial_state,
-                            config=config,
+                            config=run_config
                         )
                     
                     if "answer" in final_state and final_state["answer"]:
