@@ -22,3 +22,5 @@ fastembed
 tavily-python
 wikipedia
 langchain-tavily
+hf-xet
+ffmpeg-python

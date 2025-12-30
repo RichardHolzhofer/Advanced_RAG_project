@@ -555,16 +555,42 @@ class RAGNodes:
 
                     ("system", 
                         """
-                        You are a RAG assistant that must answer the user's question based on the provided RAG CONTEXT.
+                        You are a factual, precise RAG assistant.
 
-                        ***INSTRUCTIONS FOR ANSWERING:***
-                        1. **Use only the RAG CONTEXT** for factual grounding.
-                        2. **Do not hallucinate or guess missing information.**
-                        3. **Explicitly call out missing information.** If any part of the user's question is not covered in the context, write:
-                        "NOTE: The context does not contain information about [specific missing details]."
-                        4. Summarize metrics and results that exist in context. Label them clearly as "derived from the following metrics".
-                        5. If all parts of the question are fully covered, just summarize the facts.
-                        6. Keep your answer concise, clear, and structured.
+                        Your task is to answer the user's question using ONLY the information provided in the RAG CONTEXT.
+
+                        ***INSTRUCTIONS FOR ANSWERING (STRICT):***
+
+                        1. FACTUAL GROUNDING
+                        - Use ONLY facts explicitly stated in the RAG CONTEXT.
+                        - Do NOT infer, guess, extrapolate, or use external knowledge.
+
+                        2. MULTI-PART QUESTIONS
+                        - Carefully identify all parts of the user's question.
+                        - Answer every part that is supported by the RAG CONTEXT.
+
+                        3. MISSING INFORMATION DISCLOSURE
+                        - If the question asks for information that is NOT present in the RAG CONTEXT:
+                        - Clearly state that this information is not available.
+                        - Phrase this naturally for the user.
+                        - Do NOT mention “RAG”, “context”, “documents”, or retrieval mechanics.
+                        - Example phrasing:
+                            • “The available information does not specify …”
+                            • “This aspect is not documented in the provided information.”
+
+                        4. WHEN NOT TO DISCLOSE MISSING INFORMATION
+                        - If all parts of the question are fully answered, do NOT mention missing information.
+                        - Do NOT add disclaimers unless strictly necessary to avoid misleading the user.
+
+                        5. ANSWER QUALITY
+                        - Be concise, clear, and well-structured.
+                        - Use bullet points or sections when multiple metrics or facts are involved.
+                        - Do NOT restate the entire context.
+                        - Do NOT explain your reasoning process.
+
+                        6. OUTPUT RULES
+                        - Produce a single, user-facing answer only.
+                        - Do NOT include system notes, grading labels, or internal commentary.
                         """
                     ),
                     MessagesPlaceholder(variable_name="chat_history"),
@@ -647,7 +673,6 @@ class RAGNodes:
                             """
                             )
 
-            # 2. UPDATED FORMAT CALL: Passed rewritten_query=state["rewritten_query"]
             formatted_grader_prompt = grader_prompt.format_prompt(
                 context=state["context"], 
                 answer=state["answer"],
@@ -671,8 +696,29 @@ class RAGNodes:
             
                 update["frozen_rag_facts"] = state["answer"]
                 
+            if not state.get("context"):
+                update["final_grade"] = "not_relevant"
+                
+            logging.info(
+                f"Grader decision: {final_grade} "
+                f"Expansion_counter: {expansion_counter} "
+                f"Answer_source: {state.get('answer_source')}"
+            )
+                
             return update
 
+        except Exception as e:
+            raise RAGException(e, sys)
+        
+    def increment_expansion_counter(self, state: RAGState) -> RAGState:
+        """
+        Increment expansion counter.
+        """
+        try:
+            return {
+                "expansion_counter": state.get("expansion_counter", 0) + 1
+            }
+            
         except Exception as e:
             raise RAGException(e, sys)
         

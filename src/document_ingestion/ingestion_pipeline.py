@@ -1,3 +1,4 @@
+import os
 import sys
 import asyncio
 from src.logger.logger import logging
@@ -15,7 +16,7 @@ class IngestionPipeline:
         try:
             logging.info("Initializing ingestion pipeline.")
             #Loading documents from a given folder and urls from a json file
-            self.loader = DocumentLoader(docs_path="test_documents", url_path="data/urls.json") #Change these or their contents to ingest new documents
+            self.loader = DocumentLoader(docs_path="documents", url_path="urls/urls.json") #Change these or their contents to ingest new documents
             self.processor = DocumentProcessor()
             self.vectorstore = RAGVectorStore()
             
@@ -82,6 +83,8 @@ class IngestionPipeline:
             document_infos, document_chunks = await self.process_documents(documents=to_process)
             
             logging.info("Saving documents with metadata as JSON.")
+            os.makedirs("./ingested_documents", exist_ok=True)
+            
             #Saving documents as JSON.
             save_json(
                 path="./ingested_documents",

@@ -8,14 +8,20 @@ from src.logger.logger import logging
 from src.exception.exception import RAGException
 from src.config.config import Config
 
+#Crawl4AI
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai.models import CrawlResultContainer
+
+#Docling
 from docling.chunking import HybridChunker
 from transformers import AutoTokenizer
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import InputFormat
+from docling_core.transforms.chunker.hierarchical_chunker import ChunkingSerializerProvider, ChunkingDocSerializer
+from docling_core.transforms.serializer.markdown import MarkdownTableSerializer
 
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
@@ -28,7 +34,12 @@ class DocumentProcessor(Config):
         self.llm = Config.get_llm_model()
         self.converter = DocumentConverter()
         self.tokenizer = HuggingFaceTokenizer(tokenizer=AutoTokenizer.from_pretrained(self.EMBED_MODEL_ID), max_tokens=self.MAX_TOKENS)
-        self.chunker =HybridChunker(tokenizer=self.tokenizer, merge_peers=True)
+        
+        class MDTableSerializerProvider(ChunkingSerializerProvider):
+            def get_serializer(self, doc):
+                return ChunkingDocSerializer(doc=doc, table_serializer=MarkdownTableSerializer())
+            
+        self.chunker =HybridChunker(tokenizer=self.tokenizer, merge_peers=True, serializer_provider=MDTableSerializerProvider())
         
     def _get_token_count(self, text):
         """
@@ -155,18 +166,20 @@ class DocumentProcessor(Config):
             
             elif isinstance(input_obj, CrawlResultContainer):
                 
+                html_content = input_obj.html
                 full_content = input_obj.markdown.raw_markdown
                 document_source = input_obj.url
                 doc_type = "web_article"
                 num_pages = 1
                 
-                docling_document = self.converter.convert_string(content=full_content, format=InputFormat.MD).document
+                docling_document = self.converter.convert_string(content=html_content, format=InputFormat.HTML).document
                 
             else:
                 raise TypeError(f"Not supported document type: {type(input_obj)}")
             
             logging.info("Creating metadata for document.")
             
+            #Document metadata creation
             full_doc = {
                 "document_id": doc_uuid,
                 "source": document_source,
@@ -177,6 +190,7 @@ class DocumentProcessor(Config):
                 "no_of_pages": num_pages
             }
             
+            #Chunking starts here
             chunks = list(self.chunker.chunk(docling_document))
             logging.info("Chunking of the document has been completed successfully.")
             
@@ -186,7 +200,19 @@ class DocumentProcessor(Config):
                 
                 chunk_uuid = str(uuid.uuid4())
                 provenance = self._get_provenance(chunk=chunk_content)
-                token_count = self._get_token_count(text=chunk_content.text)
+                
+                
+                chunk_meta = chunk_content.meta
+                headings_list = getattr(chunk_meta, 'headings', [])
+                
+                if headings_list:
+                    header_context = " > ".join(headings_list)
+                    # Prepend specific section headers to the chunk text
+                    enriched_text = f"Section: {header_context}\nContent:\n{chunk_content.text}"
+                else:
+                    enriched_text = chunk_content.text
+                    
+                token_count = self._get_token_count(text=enriched_text)
                 
                 try:
                     page_no = chunk_content.export_json_dict()["meta"]["doc_items"][0]['prov'][0]["page_no"]
@@ -198,11 +224,12 @@ class DocumentProcessor(Config):
                 final_chunks.append(
                     Document(
                         id=chunk_uuid,
-                        page_content=self._create_context(full_doc=full_doc["full_content"], chunk=chunk_content.text),
+                        page_content=self._create_context(full_doc=full_doc["full_content"], chunk=enriched_text),
                         metadata={
                             "document_id": doc_uuid,
                             "chunk_index": chunk_id,
                             "original_chunk": chunk_content.text,
+                            "headings": headings_list,
                             "source" : document_source,
                             "source_type": doc_type,
                             "file_type": doc_type,
@@ -221,14 +248,16 @@ class DocumentProcessor(Config):
 
     async def crawl_websites(self, urls):
         """
-        Crawls all websites asynchronously provided under 'urls' and returns their content as markdowns.
+        Crawls all websites asynchronously provided under 'urls' and returns their content as markdowns in a list of CrawlResultContainer.
         """
         
         try:
             logging.info("Crawling process for urls has been started.")
             
             browser_config = BrowserConfig(headless=True, verbose=False)
+            content_filter = PruningContentFilter(threshold=0.55, min_word_threshold=50)
             md_generator = DefaultMarkdownGenerator(
+                content_filter=content_filter,
                 options={
                     "ignore_links": True,
                     "escape_html": False,

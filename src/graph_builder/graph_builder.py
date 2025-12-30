@@ -1,12 +1,16 @@
+import os
 import sys
 
 from src.logger.logger import logging
 from src.exception.exception import RAGException
+from src.config.config import Config
+from src.vectorstore.vectorstore import RAGVectorStore
 from src.state.state import RAGState
 from src.node.node import RAGNodes
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+
 
 class GraphBuilder:
     def __init__(self,retriever, llm):
@@ -71,9 +75,7 @@ class GraphBuilder:
                 return "external_agent"
             
             #partially relevant
-            if expansion_counter < self.MAX_EXPANSION:
-                state["expansion_counter"] = expansion_counter + 1
-                
+            if expansion_counter < self.MAX_EXPANSION:                
                 logging.info("Answer is partially relevant, routed to query expansion.")
                 return "expander"
             
@@ -107,6 +109,7 @@ class GraphBuilder:
             graph_builder.add_node("grade_documents_node", self.nodes.grade_documents)
             graph_builder.add_node("answer_generator_node", self.nodes.generate_answer)
             graph_builder.add_node("hallucination_grader_node", self.nodes.grade_hallucination)
+            graph_builder.add_node("expansion_counter_node", self.nodes.increment_expansion_counter)
             graph_builder.add_node("query_expander_node", self.nodes.expand_query)
     
             
@@ -150,12 +153,13 @@ class GraphBuilder:
                 path=self.hallucination_checker,
                 path_map={
                     "end_conversation": END,
-                    "expander": "query_expander_node",
+                    "expander": "expansion_counter_node",
                     "external_agent": "external_agent_node",
                     "rag_agent": "rag_agent_node"
                 }
                 )
-
+            
+            graph_builder.add_edge("expansion_counter_node", "query_expander_node")
             graph_builder.add_edge("query_expander_node", "retriever_node")
             graph_builder.add_edge("external_agent_node", END)
             graph_builder.add_edge("rag_agent_node", END)
@@ -169,3 +173,20 @@ class GraphBuilder:
         except Exception as e:
             raise RAGException(e, sys)
     
+
+if __name__ == "__main__":
+    vector_store = RAGVectorStore()
+    vector_store.load_vectorstore()
+    graph_builder = GraphBuilder(
+        retriever=vector_store.create_retriever(),
+        llm=Config.get_llm_model()
+        )
+    
+    graph = graph_builder.build_graph()    
+
+    graph_image = graph.get_graph().draw_mermaid_png()
+
+    os.makedirs("./graph_image", exist_ok=True)
+    with open("./graph_image/graph_image.png", 'wb') as f:
+        f.write(graph_image)
+        
