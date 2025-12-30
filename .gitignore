@@ -20,3 +20,6 @@ src/document_ingestion/converted_documents/
 
 # Helper notebook
 helper.ipynb
+
+# Recordings
+recordings/
