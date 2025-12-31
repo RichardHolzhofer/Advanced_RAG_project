@@ -261,7 +261,10 @@ class RAGNodes:
             
             rag_answer = None
             
-            if state.get("answer_source") == "rag":
+            frozen = state.get("frozen_rag_facts", "").strip()
+            if frozen:
+                rag_answer = frozen
+            elif state.get("answer_source") == "rag":
                 candidate = state.get("answer", "").strip()
                 if candidate:
                     rag_answer = candidate
