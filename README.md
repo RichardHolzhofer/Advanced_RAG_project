@@ -30,7 +30,7 @@ The system implements a cyclic graph workflow:
 
 1.  **Rewrite Query**: Optimizes the user's question.
 2.  **Route**: Directs traffic—simple greetings go to Chat (fast), complex queries go to RAG.
-3.  **Retrieve**: Fetches top-$k$ documents using Hybrid Search.
+3.  **Retrieve**: Fetches top-k (7) documents using Hybrid Search.
 4.  **Grade Documents**: Filters irrelevant content.
 5.  **Generate**: Synthesizes an answer using **GPT-4o-mini**.
 6.  **Hallucination Check**: Verifies if the answer is grounded.
